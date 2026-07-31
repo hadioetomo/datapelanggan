@@ -22,12 +22,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Inisialisasi Cookie Manager untuk Refresh-Proof Session
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# 2. Inisialisasi Cookie Manager (Langsung dipanggil tanpa @st.cache_resource)
+cookie_manager = stx.CookieManager()
 
 # 3. Styling CSS Custom
 st.markdown("""
@@ -124,7 +120,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Konstanta Waktu (dalam detik)
-SESSION_TIMEOUT = 30 * 60   # 30 Menit Sesi Login
+SESSION_TIMEOUT = 30 * 60   # 30 Menit Sesi Login (Inaktif)
 OTP_TIMEOUT = 2 * 60        # 2 Menit OTP
 OTP_COOLDOWN = 60           # 60 Detik Jeda OTP
 
@@ -148,20 +144,22 @@ if "target_phone" not in st.session_state:
 # Validasi Login Sesi Browser dari Cookie (Tahan Refresh)
 if auth_cookie and login_time_cookie:
     current_time = time.time()
-    last_login_time = float(login_time_cookie)
-    
-    # Cek durasi inaktivitas (30 menit)
-    if current_time - last_login_time <= SESSION_TIMEOUT:
-        st.session_state["authenticated"] = True
-        st.session_state["target_phone"] = auth_cookie
-        # Perbarui waktu aktivitas terakhir
-        cookie_manager.set('login_time', str(current_time), key="update_timer")
-    else:
-        # Hapus Cookie jika sudah kedaluwarsa
-        cookie_manager.delete('auth_user', key="del_user_exp")
-        cookie_manager.delete('login_time', key="del_time_exp")
-        st.session_state["authenticated"] = False
-        st.warning("⏱️ Sesi login Anda telah berakhir (30 menit inaktif). Silakan login kembali.")
+    try:
+        last_login_time = float(login_time_cookie)
+        # Cek durasi inaktivitas (30 menit)
+        if current_time - last_login_time <= SESSION_TIMEOUT:
+            st.session_state["authenticated"] = True
+            st.session_state["target_phone"] = auth_cookie
+            # Perbarui timestamp aktivitas terakhir
+            cookie_manager.set('login_time', str(current_time), key="update_timer")
+        else:
+            # Hapus Cookie jika waktu habis
+            cookie_manager.delete('auth_user', key="del_user_exp")
+            cookie_manager.delete('login_time', key="del_time_exp")
+            st.session_state["authenticated"] = False
+            st.warning("⏱️ Sesi login Anda telah berakhir (30 menit inaktif). Silakan login kembali.")
+    except ValueError:
+        pass
 
 # 5. Fungsi Kirim OTP via WhatsApp
 def send_whatsapp_otp(phone, otp_code):
@@ -251,7 +249,7 @@ if not st.session_state["authenticated"]:
                         st.error("❌ Kode OTP telah kedaluwarsa. Silakan kirim ulang.")
                         st.session_state["otp_sent"] = False
                     elif otp_input == st.session_state["generated_otp"]:
-                        # Simpan ke Session Cookie (Bertahan saat Refresh)
+                        # Simpan ke Cookie
                         cookie_manager.set('auth_user', st.session_state["target_phone"], key="set_user")
                         cookie_manager.set('login_time', str(time.time()), key="set_time")
                         st.session_state["authenticated"] = True
@@ -372,7 +370,7 @@ else:
             total_matching_rows += cursor.fetchone()[0]
             conn.close()
 
-        # Load Semua Hasil Data dalam 1 Halaman
+        # Load Semua Hasil Data dalam 1 Halaman (Tanpa Paginasi)
         filtered_dfs = []
         for db_f in valid_db_files:
             conn = sqlite3.connect(db_f)
@@ -391,7 +389,7 @@ else:
         st.markdown("---")
 
         if not df_filtered.empty:
-            # --- PENGGABUNGAN ALAMAT KELOMPOK LENGKAP: Nama Lokasi, Blok, House No, Nama Jalan, RT, RW ---
+            # --- PENGGABUNGAN ALAMAT: Nama Lokasi, Blok, House No, Nama Jalan, RT, RW ---
             def format_full_address(row):
                 parts = []
                 cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
@@ -416,7 +414,7 @@ else:
 
             df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
 
-            # Pemetaan Kolom Tampilan
+            # Pemetaan Kolom (Alamat Utama berada di urutan pertama)
             col_mapping_target = {
                 "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
                 "Homepass ID": c_homepass,
