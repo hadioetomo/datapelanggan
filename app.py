@@ -35,19 +35,13 @@ st.markdown("""
             color: #64748B;
             margin-bottom: 20px;
         }
-        .metric-card {
-            background-color: #F8FAFC;
-            border: 1px solid #E2E8F0;
-            padding: 15px;
-            border-radius: 8px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
 # Durasi Sesi Login (30 Menit dalam detik)
 SESSION_TIMEOUT = 30 * 60 
 
-# Inisialisasi Session State untuk Sesi, Login, & OTP
+# Inisialisasi Session State
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "login_time" not in st.session_state:
@@ -116,7 +110,7 @@ if not st.session_state["authenticated"]:
                 if verify_otp:
                     if otp_input == st.session_state["generated_otp"]:
                         st.session_state["authenticated"] = True
-                        st.session_state["login_time"] = time.time()  # Catat waktu mulai sesi
+                        st.session_state["login_time"] = time.time()
                         st.success("Login berhasil!")
                         st.rerun()
                     else:
@@ -150,7 +144,7 @@ else:
     all_columns = [col.strip() for col in sample_df.columns]
     sample_conn.close()
 
-    # Mapping nama kolom fleksibel di database
+    # Mapping nama kolom fleksibel
     def find_col(keywords):
         for col in all_columns:
             if any(k in col.lower() for k in keywords):
@@ -169,9 +163,12 @@ else:
     c_network = find_col(['network_type', 'network'])
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🔍 Filter Data Utama")
+    st.sidebar.subheader("🔍 Filter & Pencarian Data")
 
-    # 1. Pilihan Kota (Surabaya, Gresik, Sidoarjo)
+    # 1. Fitur Pencarian Kata Kunci Bebas (Search Bar)
+    keyword_search = st.sidebar.text_input("Cari Kata Kunci (ID / Nama / Akun):", "", placeholder="Ketik pencarian...")
+
+    # 2. Pilihan Kota
     pilih_kota = "Semua Kota"
     if c_kota:
         all_cities = set()
@@ -185,7 +182,7 @@ else:
         daftar_kota = ['Semua Kota'] + sorted(list(all_cities))
         pilih_kota = st.sidebar.selectbox("Pilih Kota:", daftar_kota)
 
-    # 2. Pilihan Jenis Perumahan berdasarkan building_type
+    # 3. Pilihan Jenis Perumahan (building_type)
     pilih_building = "Semua Jenis"
     if c_building:
         all_buildings = set()
@@ -199,7 +196,7 @@ else:
         daftar_building = ['Semua Jenis'] + sorted(list(all_buildings))
         pilih_building = st.sidebar.selectbox("Jenis Perumahan (Building Type):", daftar_building)
 
-    # 3. Pilihan Berdasarkan Area (district)
+    # 4. Pilihan Area (district)
     pilih_district = "Semua Area"
     if c_district:
         all_districts = set()
@@ -215,10 +212,10 @@ else:
 
     # Header Utama Web
     st.markdown('<p class="main-header">🏢 Portal Informasi & Direktori Data Pelanggan</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="sub-header">Menampilkan data terintegrasi untuk wilayah: <b>{selected_region}</b> (Sesi aktif selama 30 menit)</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="sub-header">Menampilkan data terintegrasi untuk wilayah: <b>{selected_region}</b> (Sesi aktif 30 menit)</p>', unsafe_allow_html=True)
     st.markdown("---")
 
-    # Eksekusi Query Penggabungan Multi-Part Database Berdasarkan Filter
+    # Eksekusi Query Penggabungan Multi-Part Database Berdasarkan Filter & Search
     filtered_dfs = []
     total_rows_all = 0
 
@@ -238,6 +235,18 @@ else:
             conditions.append(f"[{c_building}] = '{pilih_building}'")
         if pilih_district != 'Semua Area' and c_district:
             conditions.append(f"[{c_district}] = '{pilih_district}'")
+        
+        # Logika Pencarian Teks Bebas di Seluruh Kolom Utama / Spesifik
+        if keyword_search:
+            search_conditions = []
+            search_targets = [c_homepass, c_cluster, c_contract, c_package]
+            search_targets = [t for t in search_targets if t is not None] # Filter yang aktif saja
+            
+            for target in search_targets:
+                search_conditions.append(f"[{target}] LIKE '%{keyword_search}%'")
+            
+            if search_conditions:
+                conditions.append(f"(" + " OR ".join(search_conditions) + ")")
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -248,18 +257,17 @@ else:
 
     df_filtered = pd.concat(filtered_dfs, ignore_index=True)
 
-    # Tampilan Metrik Atas (Dashboard Cards)
+    # Tampilan Metrik Atas
     m1, m2, m3 = st.columns(3)
-    m1.metric("📊 Data Sesuai Filter", f"{len(df_filtered):,} baris")
+    m1.metric("📊 Data Sesuai Filter/Pencarian", f"{len(df_filtered):,} baris")
     m2.metric("📋 Total Keseluruhan Data", f"{total_rows_all:,} baris")
     m3.metric("📂 Wilayah Aktif", selected_region)
     st.markdown("---")
 
-    # Menentukan Kolom Khusus yang Diminta untuk Ditampilkan:
+    # Menentukan Kolom Khusus yang Ditampilkan:
     # Homepass ID, Nama Lokasi (cluster_name), Home Pass Status, Class, Contract Account, Package, Network Type
     target_display_cols = []
     
-    # Mapping kolom secara aman berdasarkan ketersediaan di database
     col_mapping_target = {
         "Homepass ID": c_homepass,
         "Nama Lokasi (Cluster)": c_cluster,
@@ -278,13 +286,12 @@ else:
             active_display_labels.append(label)
             active_db_columns.append(col_name)
 
-    # Jika kolom spesifik ditemukan, tampilkan tabelnya dengan format rapi
     if active_db_columns:
         display_df = df_filtered[active_db_columns].copy()
-        display_df.columns = active_display_labels  # Ubah nama header tabel agar sesuai permintaan
+        display_df.columns = active_display_labels
         
         st.markdown(f"### 📋 Hasil Data Pelanggan ({selected_region})")
         st.dataframe(display_df, use_container_width=True, height=580)
     else:
-        st.warning("⚠️ Kolom spesifik (Homepass ID, Cluster, Status, dll) tidak terdeteksi secara otomatis di struktur database ini. Menampilkan seluruh kolom tersedia:")
+        st.warning("⚠️ Kolom spesifik tidak terdeteksi otomatis. Menampilkan seluruh kolom tersedia:")
         st.dataframe(df_filtered, use_container_width=True, height=580)
