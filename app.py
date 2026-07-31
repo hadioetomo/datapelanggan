@@ -24,12 +24,9 @@ st.set_page_config(
 # --- STYLING CSS CUSTOM & BERWARNA ---
 st.markdown("""
     <style>
-        /* Background & Global Font */
         .stApp {
             background-color: #F4F6F9;
         }
-        
-        /* Header Utama dengan Gradasi Warna */
         .main-header {
             font-size: 26px;
             font-weight: 800;
@@ -44,24 +41,21 @@ st.markdown("""
             margin-bottom: 20px;
             font-weight: 500;
         }
-
-        /* Kotak Filter Berwarna Putih dengan Border Halus */
         .filter-container {
             background: #FFFFFF;
             border-top: 4px solid #3B82F6;
             padding: 20px;
             border-radius: 12px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
-
-        /* Kartu Login / Container */
-        .login-card {
+        .sort-container {
             background: #FFFFFF;
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            border: 1px solid #E2E8F0;
+            border-left: 4px solid #10B981;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+            margin-bottom: 20px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -109,7 +103,7 @@ def send_whatsapp_otp(phone, otp_code):
         print(f"Error Watzap API: {e}")
         return False
 
-# --- HALAMAN LOGIN & OTP (TAMPILAN KARTU MENARIK) ---
+# --- HALAMAN LOGIN & OTP ---
 if not st.session_state["authenticated"]:
     col1, col2, col3 = st.columns([1, 2.2, 1])
     with col2:
@@ -209,10 +203,8 @@ else:
     with st.container():
         st.markdown('<div class="filter-container">', unsafe_allow_html=True)
         
-        # Baris 1: Pencarian Kata Kunci
         keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Nama Lokasi, Akun, atau Jalan:", "", placeholder="Ketik kata kunci pencarian...")
 
-        # Baris 2: Kolom Dropdown Filter
         col_f1, col_f2, col_f3 = st.columns(3)
 
         pilih_kota = "Semua Kota"
@@ -334,7 +326,22 @@ else:
     if active_db_columns:
         display_df = df_filtered[active_db_columns].copy()
         display_df.columns = active_display_labels
+
+        # --- FITUR SORTIR (SORTING) HASIL PENCARIAN ---
+        st.markdown('<div class="sort-container">', unsafe_allow_html=True)
+        st.markdown("##### 🔃 Pengaturan Urutan Data (Sorting)")
+        s_col1, s_col2 = st.columns(2)
         
+        with s_col1:
+            sort_by_column = st.selectbox("Urutkan Berdasarkan Kolom:", options=active_display_labels)
+        with s_col2:
+            sort_order = st.radio("Metode Urutan:", options=["Ascending (A-Z / Terkecil)", "Descending (Z-A / Terbesar)"], horizontal=True)
+
+        # Terapkan Sortir pada DataFrame
+        is_ascending = True if "Ascending" in sort_order else False
+        display_df = display_df.sort_values(by=sort_by_column, ascending=is_ascending, na_position='last')
+        st.markdown('</div>', unsafe_allow_html=True)
+
         st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
         st.dataframe(display_df, use_container_width=True, height=580)
     else:
