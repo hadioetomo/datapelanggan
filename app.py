@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import os
 import random
 import requests
-from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, ALLOWED_PHONE_NUMBERS, DB_MAPPING
+from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, ALLOWED_PHONE_NUMBERS, DB_PARTS_MAPPING
 
-# Konfigurasi Halaman Web
 st.set_page_config(
     page_title="Portal Data Pelanggan",
     page_icon="👥",
@@ -73,28 +73,26 @@ else:
     st.markdown("---")
 
     try:
-        # 1. Navigasi Wilayah berdasarkan database terpisah
         st.sidebar.header("📂 Navigasi Wilayah")
-        selected_region = st.sidebar.selectbox("Pilih Wilayah:", list(DB_MAPPING.keys()))
-        
-        db_file = DB_MAPPING[selected_region]
-        conn = sqlite3.connect(db_file)
-        cursor = conn.cursor()
+        # Hanya tampilkan wilayah yang file part 1 nya benar-benar ada
+        available_regions = [reg for reg, parts in DB_PARTS_MAPPING.items() if os.path.exists(parts[0])]
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall()]
-        
-        if not tables:
-            st.error(f"⚠️ Tabel data untuk wilayah {selected_region} tidak ditemukan.")
+        if not available_regions:
+            st.error("⚠️ Tidak ditemukan file database pecahan part di direktori server.")
             st.stop()
+
+        selected_region = st.sidebar.selectbox("Pilih Wilayah:", available_regions)
         
-        active_table = tables[0]
+        # Ambil daftar file part yang benar-benar ada di disk
+        valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
-        # Ambil sampel kolom
-        sample_df = pd.read_sql(f"SELECT * FROM [{active_table}] LIMIT 5", conn)
+        # Ambil struktur kolom dari part pertama
+        sample_conn = sqlite3.connect(valid_db_files[0])
+        sample_df = pd.read_sql(f"SELECT * FROM [{selected_region}] LIMIT 5", sample_conn)
         all_columns = sample_df.columns.tolist()
+        sample_conn.close()
 
-        # 2. Kustomisasi Kolom Tampilan
+        # Kustomisasi Kolom Tampilan
         st.sidebar.markdown("---")
         st.sidebar.subheader("👁️ Kustomisasi Kolom")
         selected_columns = st.sidebar.multiselect(
@@ -102,45 +100,67 @@ else:
             options=all_columns,
             default=all_columns[:min(5, len(all_columns))]
         )
-
         if not selected_columns:
             selected_columns = all_columns
 
-        # 3. Deteksi Kolom (Kota & Nama Pelanggan)
+        # Deteksi Kolom (Kota & Nama Pelanggan)
         kota_col = next((col for col in all_columns if 'kota' in col.lower() or 'kabupaten' in col.lower()), None)
         pelanggan_col = next((col for col in all_columns if 'nama' in col.lower() or 'pelanggan' in col.lower() or 'customer' in col.lower()), None)
 
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 Filter Pencarian")
 
-        query = f"SELECT * FROM [{active_table}]"
-        conditions = []
-
+        pilih_kota = "Semua Kota"
         if kota_col:
-            cursor.execute(f"SELECT DISTINCT [{kota_col}] FROM [{active_table}] WHERE [{kota_col}] IS NOT NULL")
-            daftar_kota = ['Semua Kota'] + sorted([str(r[0]) for r in cursor.fetchall()])
+            # Ambil daftar kota unik dari seluruh part database wilayah tersebut
+            all_cities = set()
+            for db_f in valid_db_files:
+                c_conn = sqlite3.connect(db_f)
+                c_curs = c_conn.cursor()
+                c_curs.execute(f"SELECT DISTINCT [{kota_col}] FROM [{selected_region}] WHERE [{kota_col}] IS NOT NULL")
+                for r in c_curs.fetchall():
+                    all_cities.add(str(r[0]))
+                c_conn.close()
+            daftar_kota = ['Semua Kota'] + sorted(list(all_cities))
             pilih_kota = st.sidebar.selectbox(f"Filter Berdasarkan {kota_col}:", daftar_kota)
-            if pilih_kota != 'Semua Kota':
-                conditions.append(f"[{kota_col}] = '{pilih_kota}'")
 
+        cari_pelanggan = ""
         if pelanggan_col:
             cari_pelanggan = st.sidebar.text_input(f"Cari Berdasarkan {pelanggan_col}:", "")
-            if cari_pelanggan:
+
+        # Gabungkan pencarian dari semua file part database wilayah tersebut
+        filtered_dfs = []
+        total_rows_all = 0
+
+        for db_f in valid_db_files:
+            conn = sqlite3.connect(db_f)
+            cursor = conn.cursor()
+            
+            # Hitung total baris keseluruhan per part
+            cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]")
+            total_rows_all += cursor.fetchone()[0]
+
+            query = f"SELECT * FROM [{selected_region}]"
+            conditions = []
+            if pilih_kota != 'Semua Kota' and kota_col:
+                conditions.append(f"[{kota_col}] = '{pilih_kota}'")
+            if cari_pelanggan and pelanggan_col:
                 conditions.append(f"[{pelanggan_col}] LIKE '%{cari_pelanggan}%'")
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
 
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+            part_df = pd.read_sql(query, conn)
+            filtered_dfs.append(part_df)
+            conn.close()
 
-        df_filtered = pd.read_sql(query, conn)
-        
-        cursor.execute(f"SELECT COUNT(*) FROM [{active_table}]")
-        total_rows = cursor.fetchone()[0]
-        conn.close()
+        # Gabungkan hasil filter dari semua part
+        df_filtered = pd.concat(filtered_dfs, ignore_index=True)
 
         # Dashboard Tampilan Utama
         col1, col2 = st.columns(2)
         col1.metric("📊 Data Pelanggan Ditemukan", f"{len(df_filtered):,} baris")
-        col2.metric(f"📋 Total Seluruh Pelanggan {selected_region}", f"{total_rows:,} baris")
+        col2.metric(f"📋 Total Seluruh Pelanggan {selected_region}", f"{total_rows_all:,} baris")
 
         st.markdown(f"### 📋 Menampilkan Data Pelanggan Wilayah: `{selected_region}`")
         st.dataframe(df_filtered[selected_columns], use_container_width=True, height=550)
