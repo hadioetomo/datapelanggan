@@ -1,10 +1,10 @@
 # --- KONFIGURASI WHATSAPP API & OTENTIKASI ---
-WHATSAPP_API_URL = "https://api.fonnte.com/send"
-WHATSAPP_TOKEN = "MASUKKAN_TOKEN_API_ANDA_DISINI"
+WHATSAPP_API_URL = "https://api.watzap.id/v1/send_message"
+WHATSAPP_TOKEN = "V3ELWOCBWBWHDEMX"
 
 ALLOWED_PHONE_NUMBERS = [
-    "6281234567890",
-    "6289876543210"
+    "6282139934994",
+    "6282131229933"
 ]
 
 # Pemetaan file database terpecah berdasarkan wilayah (< 20MB per file)
