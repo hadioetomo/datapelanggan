@@ -18,21 +18,28 @@ st.set_page_config(
     page_title="Portal Data Pelanggan",
     page_icon="🏢",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Styling Tambahan agar Tampilan Lebih Menarik & Profesional
+# Styling Tambahan agar Tampilan Lebih Menarik & Responsif untuk Ponsel
 st.markdown("""
     <style>
         .main-header {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 700;
             color: #1E3A8A;
             margin-bottom: 0px;
         }
         .sub-header {
-            font-size: 14px;
+            font-size: 13px;
             color: #64748B;
+            margin-bottom: 15px;
+        }
+        .filter-container {
+            background-color: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            padding: 15px;
+            border-radius: 10px;
             margin-bottom: 20px;
         }
     </style>
@@ -118,24 +125,25 @@ if not st.session_state["authenticated"]:
 
 # --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
-    # Sidebar Navigasi & Logout
+    # Tombol Logout ringkas di pojok atas / sidebar minimalis
     st.sidebar.markdown("### 👤 Akun Terautentikasi")
-    st.sidebar.info(f"Login via: `{st.session_state['target_phone']}`")
-    
+    st.sidebar.info(f"Login: `{st.session_state['target_phone']}`")
     if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
         st.session_state["authenticated"] = False
         st.session_state["otp_sent"] = False
         st.rerun()
 
-    st.sidebar.markdown("---")
-    st.sidebar.header("📂 Navigasi Wilayah")
-    
     available_regions = [reg for reg, parts in DB_PARTS_MAPPING.items() if os.path.exists(parts[0])]
     if not available_regions:
         st.error("⚠️ Tidak ditemukan file database pecahan part di direktori server.")
         st.stop()
 
-    selected_region = st.sidebar.selectbox("Pilih Wilayah (Database):", available_regions)
+    # Header Utama Web
+    st.markdown('<p class="main-header">🏢 Portal Informasi Data Pelanggan</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Akses pencarian data cepat & responsif via perangkat seluler</p>', unsafe_allow_html=True)
+
+    # Pilih Wilayah (Database) di bagian atas agar mudah diakses
+    selected_region = st.selectbox("📂 Pilih Wilayah:", available_regions)
     valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
     # Ambil sampel kolom dari part pertama database
@@ -161,59 +169,72 @@ else:
     c_contract = find_col(['contract_account', 'account', 'contract'])
     c_package = find_col(['package', 'paket'])
     c_network = find_col(['network_type', 'network'])
+    
+    # Kolom Tambahan Alamat
+    c_street = find_col(['street_name', 'street', 'nama_jalan', 'jalan'])
+    c_house = find_col(['house_number', 'house_no', 'nomor_rumah', 'no_rumah'])
+    c_block = find_col(['block', 'blok'])
+    c_rt = find_col(['rt'])
+    c_rw = find_col(['rw'])
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔍 Filter & Pencarian Data")
+    # --- KOTAK FILTER DI HALAMAN UTAMA (MOBILE FRIENDLY) ---
+    st.markdown("### 🔍 Filter & Pencarian Data")
+    
+    with st.container():
+        st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+        
+        # Baris 1: Pencarian Kata Kunci Bebas
+        keyword_search = st.text_input("Cari Kata Kunci (ID / Nama / Akun / Jalan):", "", placeholder="Ketik kata kunci...")
 
-    # 1. Fitur Pencarian Kata Kunci Bebas (Search Bar)
-    keyword_search = st.sidebar.text_input("Cari Kata Kunci (ID / Nama / Akun):", "", placeholder="Ketik pencarian...")
+        # Baris 2: Dropdown Filter (Dibikin grid agar rapi di ponsel/laptop)
+        col_f1, col_f2, col_f3 = st.columns(3)
 
-    # 2. Pilihan Kota
-    pilih_kota = "Semua Kota"
-    if c_kota:
-        all_cities = set()
-        for db_f in valid_db_files:
-            c_conn = sqlite3.connect(db_f)
-            c_curs = c_conn.cursor()
-            c_curs.execute(f"SELECT DISTINCT [{c_kota}] FROM [{selected_region}] WHERE [{c_kota}] IS NOT NULL")
-            for r in c_curs.fetchall():
-                all_cities.add(str(r[0]))
-            c_conn.close()
-        daftar_kota = ['Semua Kota'] + sorted(list(all_cities))
-        pilih_kota = st.sidebar.selectbox("Pilih Kota:", daftar_kota)
+        # 1. Pilihan Kota
+        pilih_kota = "Semua Kota"
+        if c_kota:
+            all_cities = set()
+            for db_f in valid_db_files:
+                c_conn = sqlite3.connect(db_f)
+                c_curs = c_conn.cursor()
+                c_curs.execute(f"SELECT DISTINCT [{c_kota}] FROM [{selected_region}] WHERE [{c_kota}] IS NOT NULL")
+                for r in c_curs.fetchall():
+                    all_cities.add(str(r[0]))
+                c_conn.close()
+            daftar_kota = ['Semua Kota'] + sorted(list(all_cities))
+            with col_f1:
+                pilih_kota = st.selectbox("Kota:", daftar_kota)
 
-    # 3. Pilihan Jenis Perumahan (building_type)
-    pilih_building = "Semua Jenis"
-    if c_building:
-        all_buildings = set()
-        for db_f in valid_db_files:
-            c_conn = sqlite3.connect(db_f)
-            c_curs = c_conn.cursor()
-            c_curs.execute(f"SELECT DISTINCT [{c_building}] FROM [{selected_region}] WHERE [{c_building}] IS NOT NULL")
-            for r in c_curs.fetchall():
-                all_buildings.add(str(r[0]))
-            c_conn.close()
-        daftar_building = ['Semua Jenis'] + sorted(list(all_buildings))
-        pilih_building = st.sidebar.selectbox("Jenis Perumahan (Building Type):", daftar_building)
+        # 2. Pilihan Jenis Perumahan (building_type)
+        pilih_building = "Semua Jenis"
+        if c_building:
+            all_buildings = set()
+            for db_f in valid_db_files:
+                c_conn = sqlite3.connect(db_f)
+                c_curs = c_conn.cursor()
+                c_curs.execute(f"SELECT DISTINCT [{c_building}] FROM [{selected_region}] WHERE [{c_building}] IS NOT NULL")
+                for r in c_curs.fetchall():
+                    all_buildings.add(str(r[0]))
+                c_conn.close()
+            daftar_building = ['Semua Jenis'] + sorted(list(all_buildings))
+            with col_f2:
+                pilih_building = st.selectbox("Jenis Perumahan:", daftar_building)
 
-    # 4. Pilihan Area (district)
-    pilih_district = "Semua Area"
-    if c_district:
-        all_districts = set()
-        for db_f in valid_db_files:
-            c_conn = sqlite3.connect(db_f)
-            c_curs = c_conn.cursor()
-            c_curs.execute(f"SELECT DISTINCT [{c_district}] FROM [{selected_region}] WHERE [{c_district}] IS NOT NULL")
-            for r in c_curs.fetchall():
-                all_districts.add(str(r[0]))
-            c_conn.close()
-        daftar_district = ['Semua Area'] + sorted(list(all_districts))
-        pilih_district = st.sidebar.selectbox("Pilih Area (District):", daftar_district)
+        # 3. Pilihan Area (district)
+        pilih_district = "Semua Area"
+        if c_district:
+            all_districts = set()
+            for db_f in valid_db_files:
+                c_conn = sqlite3.connect(db_f)
+                c_curs = c_conn.cursor()
+                c_curs.execute(f"SELECT DISTINCT [{c_district}] FROM [{selected_region}] WHERE [{c_district}] IS NOT NULL")
+                for r in c_curs.fetchall():
+                    all_districts.add(str(r[0]))
+                c_conn.close()
+            daftar_district = ['Semua Area'] + sorted(list(all_districts))
+            with col_f3:
+                pilih_district = st.selectbox("Area (District):", daftar_district)
 
-    # Header Utama Web
-    st.markdown('<p class="main-header">🏢 Portal Informasi & Direktori Data Pelanggan</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="sub-header">Menampilkan data terintegrasi untuk wilayah: <b>{selected_region}</b> (Sesi aktif 30 menit)</p>', unsafe_allow_html=True)
-    st.markdown("---")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # Eksekusi Query Penggabungan Multi-Part Database Berdasarkan Filter & Search
     filtered_dfs = []
@@ -236,11 +257,11 @@ else:
         if pilih_district != 'Semua Area' and c_district:
             conditions.append(f"[{c_district}] = '{pilih_district}'")
         
-        # Logika Pencarian Teks Bebas di Seluruh Kolom Utama / Spesifik
+        # Logika Pencarian Teks Bebas
         if keyword_search:
             search_conditions = []
-            search_targets = [c_homepass, c_cluster, c_contract, c_package]
-            search_targets = [t for t in search_targets if t is not None] # Filter yang aktif saja
+            search_targets = [c_homepass, c_cluster, c_contract, c_package, c_street]
+            search_targets = [t for t in search_targets if t is not None]
             
             for target in search_targets:
                 search_conditions.append(f"[{target}] LIKE '%{keyword_search}%'")
@@ -259,18 +280,21 @@ else:
 
     # Tampilan Metrik Atas
     m1, m2, m3 = st.columns(3)
-    m1.metric("📊 Data Sesuai Filter/Pencarian", f"{len(df_filtered):,} baris")
-    m2.metric("📋 Total Keseluruhan Data", f"{total_rows_all:,} baris")
-    m3.metric("📂 Wilayah Aktif", selected_region)
+    m1.metric("📊 Ditemukan", f"{len(df_filtered):,} baris")
+    m2.metric("📋 Total Data", f"{total_rows_all:,} baris")
+    m3.metric("📂 Wilayah", selected_region)
     st.markdown("---")
 
-    # Menentukan Kolom Khusus yang Ditampilkan:
-    # Homepass ID, Nama Lokasi (cluster_name), Home Pass Status, Class, Contract Account, Package, Network Type
-    target_display_cols = []
-    
+    # Menentukan Kolom Sesuai Permintaan:
+    # Homepass ID, Nama Lokasi (Cluster), Home Pass Status, Class, Contract Account, Package, Network Type, Street Name, House Number, Block, RT, RW
     col_mapping_target = {
         "Homepass ID": c_homepass,
         "Nama Lokasi (Cluster)": c_cluster,
+        "Street Name": c_street,
+        "House No": c_house,
+        "Block": c_block,
+        "RT": c_rt,
+        "RW": c_rw,
         "Home Pass Status": c_status,
         "Class": c_class,
         "Contract Account": c_contract,
