@@ -91,6 +91,16 @@ st.markdown("""
             font-weight: 700 !important;
         }
 
+        /* Freeze Header Tabel Dataframe */
+        div[data-testid="stDataFrame"] div[role="columnheader"] {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10 !important;
+            background-color: #F1F5F9 !important;
+            color: #0F172A !important;
+            font-weight: 700 !important;
+        }
+
         /* General Buttons */
         .stButton>button {
             border-radius: 8px !important;
@@ -125,6 +135,8 @@ if "generated_otp" not in st.session_state:
     st.session_state["generated_otp"] = ""
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
+if "page_number" not in st.session_state:
+    st.session_state["page_number"] = 1
 
 # Cek Kedaluwarsa Sesi Login (30 Menit)
 if st.session_state["authenticated"]:
@@ -290,147 +302,196 @@ else:
             pilih_cluster = st.selectbox("🏡 Filter Nama Lokasi (Cluster):", daftar_cluster)
 
     # Pencarian Kata Kunci Cepat
-    keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian...")
+    keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian untuk menampilkan data...")
 
-    # --- KONSTRUKSI QUERY SQL MULTI-PART ---
-    conditions = []
-    if pilih_cluster != 'Semua Lokasi / Cluster' and c_cluster:
-        conditions.append(f"[{c_cluster}] = '{pilih_cluster}'")
+    # Cek apakah pengguna sudah memasukkan input pencarian/filter
+    is_search_active = bool(keyword_search.strip()) or (pilih_cluster != "Semua Lokasi / Cluster")
 
-    if keyword_search:
-        search_conditions = []
-        search_targets = [t for t in [c_homepass, c_cluster, c_contract, c_package, c_street] if t is not None]
-        for target in search_targets:
-            search_conditions.append(f"[{target}] LIKE '%{keyword_search}%'")
-        if search_conditions:
-            conditions.append(f"(" + " OR ".join(search_conditions) + ")")
-
-    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-
-    # Hitung Jumlah Baris
-    total_matching_rows = 0
+    # Hitung total Keseluruhan Data
     total_db_rows = 0
-
     for db_f in valid_db_files:
         conn = sqlite3.connect(db_f)
         cursor = conn.cursor()
         cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]")
         total_db_rows += cursor.fetchone()[0]
-
-        cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
-        total_matching_rows += cursor.fetchone()[0]
         conn.close()
 
-    # --- PAGINATION SERVER-SIDE ---
-    rows_per_page = 50
-    total_pages = max(1, (total_matching_rows + rows_per_page - 1) // rows_per_page)
-    
-    col_p1, col_p2, col_p3 = st.columns([2, 3, 2])
-    with col_p2:
-        page_number = st.number_input(f"📄 Halaman (Total {total_pages} Halaman):", min_value=1, max_value=total_pages, value=1, step=1)
-    
-    offset = (page_number - 1) * rows_per_page
+    # --- JIKA BELUM MENGISI SEARCH/FILTER, TAMPILKAN INSTRUKSI (DATA KOSONG) ---
+    if not is_search_active:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("📊 Filter Ditemukan", "0 baris")
+        m2.metric("📋 Total Keseluruhan Data", f"{total_db_rows:,} baris")
+        m3.metric("📌 Wilayah Database", selected_region)
+        st.markdown("---")
+        st.info("💡 Silakan isi kata kunci pencarian di atas atau pilih **Nama Lokasi (Cluster)** untuk menampilkan data pelanggan.")
 
-    # Eksekusi Query
-    filtered_dfs = []
-    rows_needed = rows_per_page
-    current_offset = offset
-
-    for db_f in valid_db_files:
-        if rows_needed <= 0:
-            break
-            
-        conn = sqlite3.connect(db_f)
-        cursor = conn.cursor()
-        
-        cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
-        part_matches = cursor.fetchone()[0]
-
-        if current_offset >= part_matches:
-            current_offset -= part_matches
-            conn.close()
-            continue
-
-        query = f"SELECT * FROM [{selected_region}]" + where_clause + f" LIMIT {rows_needed} OFFSET {current_offset}"
-        part_df = pd.read_sql(query, conn)
-        filtered_dfs.append(part_df)
-
-        fetched = len(part_df)
-        rows_needed -= fetched
-        current_offset = 0
-        conn.close()
-
-    df_filtered = pd.concat(filtered_dfs, ignore_index=True) if filtered_dfs else pd.DataFrame()
-
-    # Metrik Ringkas
-    m1, m2, m3 = st.columns(3)
-    m1.metric("📊 Filter Ditemukan", f"{total_matching_rows:,} baris")
-    m2.metric("📋 Total Keseluruhan Data", f"{total_db_rows:,} baris")
-    m3.metric("📌 Wilayah Database", selected_region)
-    st.markdown("---")
-
-    # Mapping Kolom
-    col_mapping_target = {
-        "Homepass ID": c_homepass,
-        "Nama Lokasi (Cluster)": c_cluster,
-        "Street Name": c_street,
-        "House No": c_house,
-        "Block": c_block,
-        "RT": c_rt,
-        "RW": c_rw,
-        "Home Pass Status": c_status,
-        "Class": c_class,
-        "Contract Account": c_contract,
-        "Package": c_package,
-        "Network Type": c_network
-    }
-
-    active_display_labels = []
-    active_db_columns = []
-
-    for label, col_name in col_mapping_target.items():
-        if col_name and col_name in df_filtered.columns:
-            active_display_labels.append(label)
-            active_db_columns.append(col_name)
-
-    if not df_filtered.empty and active_db_columns:
-        display_df = df_filtered[active_db_columns].copy()
-        display_df.columns = active_display_labels
-
-        st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}** *(Max {rows_per_page} baris/halaman)*")
-        
-        event = st.dataframe(
-            display_df, 
-            use_container_width=True, 
-            height=500,
-            selection_mode="single-row",
-            on_select="rerun"
-        )
-        
-        selected_rows = event.selection.get("rows", [])
-        if selected_rows:
-            row_idx = selected_rows[0]
-            selected_data = df_filtered.iloc[row_idx]
-
-            @st.dialog("💎 Detail Informasi Pelanggan")
-            def show_detail_dialog(data):
-                st.markdown("#### Informasi Alamat & Identitas")
-                st.write(f"**Homepass ID:** `{data.get(c_homepass, 'N/A')}`")
-                st.write(f"**Nama Lokasi (Cluster):** {data.get(c_cluster, 'N/A')}")
-                st.write(f"**Jalan:** {data.get(c_street, 'N/A')} No. {data.get(c_house, '-')} (Blok {data.get(c_block, '-')})")
-                st.write(f"**RT/RW:** {data.get(c_rt, '-')}/{data.get(c_rw, '-')}")
-                st.markdown("---")
-                st.markdown("#### Informasi Layanan & Kontrak")
-                st.write(f"**Status Homepass:** `{data.get(c_status, 'N/A')}`")
-                st.write(f"**Nomor Kontrak:** `{data.get(c_contract, 'N/A')}`")
-                st.write(f"**Paket Layanan:** {data.get(c_package, 'N/A')}")
-                st.write(f"**Tipe Jaringan:** {data.get(c_network, 'N/A')}")
-                st.write(f"**Kelas:** {data.get(c_class, 'N/A')}")
-
-            show_detail_dialog(selected_data)
-
-    elif not df_filtered.empty:
-        st.warning("⚠️ Kolom spesifik tidak terdeteksi otomatis. Menampilkan seluruh kolom tersedia:")
-        st.dataframe(df_filtered, use_container_width=True, height=500)
+    # --- JIKA SUDAH MENGISI SEARCH/FILTER, PROSES DATA ---
     else:
-        st.info("ℹ️ Tidak ada data yang sesuai dengan pencarian Anda.")
+        conditions = []
+        if pilih_cluster != 'Semua Lokasi / Cluster' and c_cluster:
+            conditions.append(f"[{c_cluster}] = '{pilih_cluster}'")
+
+        if keyword_search:
+            search_conditions = []
+            search_targets = [t for t in [c_homepass, c_cluster, c_contract, c_package, c_street] if t is not None]
+            for target in search_targets:
+                search_conditions.append(f"[{target}] LIKE '%{keyword_search}%'")
+            if search_conditions:
+                conditions.append(f"(" + " OR ".join(search_conditions) + ")")
+
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+        # Hitung Jumlah Baris Terfilter
+        total_matching_rows = 0
+        for db_f in valid_db_files:
+            conn = sqlite3.connect(db_f)
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
+            total_matching_rows += cursor.fetchone()[0]
+            conn.close()
+
+        # --- PAGINATION DENGAN TOMBOL PREVIOUS & NEXT ---
+        rows_per_page = 50
+        total_pages = max(1, (total_matching_rows + rows_per_page - 1) // rows_per_page)
+
+        # Reset Halaman jika melebihi total halaman baru
+        if st.session_state["page_number"] > total_pages:
+            st.session_state["page_number"] = 1
+
+        offset = (st.session_state["page_number"] - 1) * rows_per_page
+
+        # Eksekusi Query
+        filtered_dfs = []
+        rows_needed = rows_per_page
+        current_offset = offset
+
+        for db_f in valid_db_files:
+            if rows_needed <= 0:
+                break
+                
+            conn = sqlite3.connect(db_f)
+            cursor = conn.cursor()
+            
+            cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
+            part_matches = cursor.fetchone()[0]
+
+            if current_offset >= part_matches:
+                current_offset -= part_matches
+                conn.close()
+                continue
+
+            query = f"SELECT * FROM [{selected_region}]" + where_clause + f" LIMIT {rows_needed} OFFSET {current_offset}"
+            part_df = pd.read_sql(query, conn)
+            filtered_dfs.append(part_df)
+
+            fetched = len(part_df)
+            rows_needed -= fetched
+            current_offset = 0
+            conn.close()
+
+        df_filtered = pd.concat(filtered_dfs, ignore_index=True) if filtered_dfs else pd.DataFrame()
+
+        # Metrik Ringkas
+        m1, m2, m3 = st.columns(3)
+        m1.metric("📊 Filter Ditemukan", f"{total_matching_rows:,} baris")
+        m2.metric("📋 Total Keseluruhan Data", f"{total_db_rows:,} baris")
+        m3.metric("📌 Wilayah Database", selected_region)
+        st.markdown("---")
+
+        if not df_filtered.empty:
+            # --- MEMBUAT GABUNGAN ALAMAT DALAM 1 KOLOM ---
+            def format_full_address(row):
+                parts = []
+                cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
+                street_val = str(row[c_street]).strip() if c_street and pd.notna(row[c_street]) else ""
+                house_val = str(row[c_house]).strip() if c_house and pd.notna(row[c_house]) else ""
+                block_val = str(row[c_block]).strip() if c_block and pd.notna(row[c_block]) else ""
+                rt_val = str(row[c_rt]).strip() if c_rt and pd.notna(row[c_rt]) else ""
+                rw_val = str(row[c_rw]).strip() if c_rw and pd.notna(row[c_rw]) else ""
+
+                if cluster_val:
+                    parts.append(f"[{cluster_val}]")
+                if street_val:
+                    parts.append(street_val)
+                if house_val:
+                    parts.append(f"No. {house_val}")
+                if block_val:
+                    parts.append(f"Blok {block_val}")
+                if rt_val or rw_val:
+                    parts.append(f"RT/RW: {rt_val or '-'}/{rw_val or '-'}")
+
+                return " ".join(parts) if parts else "-"
+
+            df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
+
+            # Pemetaan Kolom Tampilan
+            col_mapping_target = {
+                "Homepass ID": c_homepass,
+                "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
+                "Home Pass Status": c_status,
+                "Class": c_class,
+                "Contract Account": c_contract,
+                "Package": c_package,
+                "Network Type": c_network
+            }
+
+            active_display_labels = []
+            active_db_columns = []
+
+            for label, col_name in col_mapping_target.items():
+                if col_name and col_name in df_filtered.columns:
+                    active_display_labels.append(label)
+                    active_db_columns.append(col_name)
+
+            display_df = df_filtered[active_db_columns].copy()
+            display_df.columns = active_display_labels
+
+            # Header Tabel Hasil & Navigasi Tombol
+            st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
+            
+            event = st.dataframe(
+                display_df, 
+                use_container_width=True, 
+                height=480,
+                selection_mode="single-row",
+                on_select="rerun"
+            )
+
+            # Tombol Navigasi Halaman (Previous & Next)
+            btn_col1, btn_col2, btn_col3 = st.columns([1, 2, 1])
+            with btn_col1:
+                if st.button("◀️ Previous", use_container_width=True, disabled=(st.session_state["page_number"] <= 1)):
+                    st.session_state["page_number"] -= 1
+                    st.rerun()
+
+            with btn_col2:
+                st.markdown(f"<p style='text-align: center; margin-top: 8px; font-weight: 600;'>Halaman {st.session_state['page_number']} dari {total_pages}</p>", unsafe_allow_html=True)
+
+            with btn_col3:
+                if st.button("Next ▶️", use_container_width=True, disabled=(st.session_state["page_number"] >= total_pages)):
+                    st.session_state["page_number"] += 1
+                    st.rerun()
+
+            # Pop-up Detail
+            selected_rows = event.selection.get("rows", [])
+            if selected_rows:
+                row_idx = selected_rows[0]
+                selected_data = df_filtered.iloc[row_idx]
+
+                @st.dialog("💎 Detail Informasi Pelanggan")
+                def show_detail_dialog(data):
+                    st.markdown("#### Informasi Alamat & Identitas")
+                    st.write(f"**Homepass ID:** `{data.get(c_homepass, 'N/A')}`")
+                    st.write(f"**Alamat Lengkap:** {data.get('Alamat / Lokasi Pelanggan', 'N/A')}")
+                    st.markdown("---")
+                    st.markdown("#### Informasi Layanan & Kontrak")
+                    st.write(f"**Status Homepass:** `{data.get(c_status, 'N/A')}`")
+                    st.write(f"**Nomor Kontrak:** `{data.get(c_contract, 'N/A')}`")
+                    st.write(f"**Paket Layanan:** {data.get(c_package, 'N/A')}")
+                    st.write(f"**Tipe Jaringan:** {data.get(c_network, 'N/A')}")
+                    st.write(f"**Kelas:** {data.get(c_class, 'N/A')}")
+
+                show_detail_dialog(selected_data)
+
+        else:
+            st.info("ℹ️ Tidak ada data yang sesuai dengan kata kunci pencarian Anda.")
