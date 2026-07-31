@@ -45,26 +45,29 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Durasi Sesi Login (30 Menit dalam detik)
-SESSION_TIMEOUT = 30 * 60 
+# Konstanta Waktu (dalam detik)
+SESSION_TIMEOUT = 30 * 60   # Sesi Login bertahan maksimal 30 Menit
+OTP_TIMEOUT = 2 * 60        # Kode OTP kedaluwarsa dalam 2 Menit
 
-# Inisialisasi Session State
+# Inisialisasi Session State (Didukung permanen dengan st.session_state)
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "login_time" not in st.session_state:
     st.session_state["login_time"] = 0
 if "otp_sent" not in st.session_state:
     st.session_state["otp_sent"] = False
+if "otp_time" not in st.session_state:
+    st.session_state["otp_time"] = 0
 if "generated_otp" not in st.session_state:
     st.session_state["generated_otp"] = ""
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
 
-# Cek Kedaluwarsa Sesi (30 Menit)
+# Cek Kedaluwarsa Sesi Login (30 Menit)
 if st.session_state["authenticated"]:
     if time.time() - st.session_state["login_time"] > SESSION_TIMEOUT:
         st.session_state["authenticated"] = False
-        st.warning("⏱️ Sesi login Anda telah habis (30 menit). Silakan login kembali.")
+        st.warning("⏱️ Sesi login Anda telah berakhir (30 menit). Silakan login kembali.")
         st.rerun()
 
 def send_whatsapp_otp(phone, otp_code):
@@ -72,7 +75,7 @@ def send_whatsapp_otp(phone, otp_code):
         "api_key": WHATSAPP_API_KEY,
         "number_key": WHATSAPP_NUMBER_KEY,
         "phone_no": phone,
-        "message": f"Kode OTP Login Portal Data Pelanggan Anda adalah: *{otp_code}*. Berlaku selama 30 menit."
+        "message": f"Kode OTP Login Portal Data Pelanggan Anda adalah: *{otp_code}*. Kode ini berlaku selama 2 menit."
     }
     headers = {"Content-Type": "application/json"}
     try:
@@ -102,10 +105,11 @@ if not st.session_state["authenticated"]:
                     otp = str(random.randint(100000, 999999))
                     st.session_state["generated_otp"] = otp
                     st.session_state["target_phone"] = phone_input
+                    st.session_state["otp_time"] = time.time()  # Catat waktu pengiriman OTP
                     
                     send_whatsapp_otp(phone_input, otp)
                     st.session_state["otp_sent"] = True
-                    st.success(f"Kode OTP terkirim ke WhatsApp {phone_input}!")
+                    st.success(f"Kode OTP terkirim ke WhatsApp {phone_input}! (Berlaku 2 menit)")
                 else:
                     st.error("❌ Nomor WhatsApp tidak terdaftar dalam sistem.")
 
@@ -115,9 +119,13 @@ if not st.session_state["authenticated"]:
                 verify_otp = st.form_submit_button("✨ Verifikasi & Masuk", use_container_width=True)
 
                 if verify_otp:
-                    if otp_input == st.session_state["generated_otp"]:
+                    # Cek apakah OTP sudah lebih dari 2 menit
+                    if time.time() - st.session_state["otp_time"] > OTP_TIMEOUT:
+                        st.error("❌ Kode OTP telah kedaluwarsa (lebih dari 2 menit). Silakan kirim ulang OTP.")
+                        st.session_state["otp_sent"] = False
+                    elif otp_input == st.session_state["generated_otp"]:
                         st.session_state["authenticated"] = True
-                        st.session_state["login_time"] = time.time()
+                        st.session_state["login_time"] = time.time()  # Catat awal sesi login 30 menit
                         st.success("Login berhasil!")
                         st.rerun()
                     else:
@@ -125,7 +133,7 @@ if not st.session_state["authenticated"]:
 
 # --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
-    # Tombol Logout ringkas di pojok atas / sidebar minimalis
+    # Tombol Logout ringkas di sidebar
     st.sidebar.markdown("### 👤 Akun Terautentikasi")
     st.sidebar.info(f"Login: `{st.session_state['target_phone']}`")
     if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
@@ -142,7 +150,7 @@ else:
     st.markdown('<p class="main-header">🏢 Portal Informasi Data Pelanggan</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Akses pencarian data cepat & responsif via perangkat seluler</p>', unsafe_allow_html=True)
 
-    # Pilih Wilayah (Database) di bagian atas agar mudah diakses
+    # Pilih Wilayah (Database) di bagian atas
     selected_region = st.selectbox("📂 Pilih Wilayah:", available_regions)
     valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
@@ -186,7 +194,7 @@ else:
         # Baris 1: Pencarian Kata Kunci Bebas
         keyword_search = st.text_input("Cari Kata Kunci (ID / Nama / Akun / Jalan):", "", placeholder="Ketik kata kunci...")
 
-        # Baris 2: Dropdown Filter (Dibikin grid agar rapi di ponsel/laptop)
+        # Baris 2: Dropdown Filter
         col_f1, col_f2, col_f3 = st.columns(3)
 
         # 1. Pilihan Kota
@@ -257,7 +265,6 @@ else:
         if pilih_district != 'Semua Area' and c_district:
             conditions.append(f"[{c_district}] = '{pilih_district}'")
         
-        # Logika Pencarian Teks Bebas
         if keyword_search:
             search_conditions = []
             search_targets = [c_homepass, c_cluster, c_contract, c_package, c_street]
@@ -285,8 +292,7 @@ else:
     m3.metric("📂 Wilayah", selected_region)
     st.markdown("---")
 
-    # Menentukan Kolom Sesuai Permintaan:
-    # Homepass ID, Nama Lokasi (Cluster), Home Pass Status, Class, Contract Account, Package, Network Type, Street Name, House Number, Block, RT, RW
+    # Kolom Hasil Tampilan
     col_mapping_target = {
         "Homepass ID": c_homepass,
         "Nama Lokasi (Cluster)": c_cluster,
