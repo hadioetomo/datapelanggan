@@ -4,14 +4,16 @@ import sqlite3
 import os
 import random
 import requests
-from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, ALLOWED_PHONE_NUMBERS, DB_PARTS_MAPPING
+from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, WHATSAPP_NUMBER_KEY, ALLOWED_PHONE_NUMBERS, DB_PARTS_MAPPING
 
+# Konfigurasi Halaman Web
 st.set_page_config(
-    page_title="Portal Data",
+    page_title="Portal Data Pelanggan",
     page_icon="👥",
     layout="wide"
 )
 
+# Inisialisasi Session State untuk Login & OTP
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "otp_sent" not in st.session_state:
@@ -26,16 +28,27 @@ def send_whatsapp_otp(phone, otp_code):
         "target": phone,
         "message": f"Kode OTP Login Portal Data Pelanggan Anda adalah: *{otp_code}*. Jangan berikan kepada siapapun.",
     }
-    headers = {"Authorization": WHATSAPP_TOKEN}
+    
+    # Menambahkan number key ke payload jika diperlukan oleh provider API Anda
+    if WHATSAPP_NUMBER_KEY:
+        payload["number"] = WHATSAPP_NUMBER_KEY  # Ganti key parameter ini jika provider menggunakan nama lain (misal: device)
+
+    headers = {
+        "Authorization": WHATSAPP_TOKEN
+    }
+    
     try:
         response = requests.post(WHATSAPP_API_URL, data=payload, headers=headers)
         return response.status_code == 200
-    except:
+    except Exception as e:
+        print(f"Error WA API: {e}")
         return False
 
-# --- HALAMAN LOGIN ---
+# --- HALAMAN LOGIN & OTP ---
 if not st.session_state["authenticated"]:
-    st.title("🔐 Login Data Pelanggan")
+    st.title("🔐 Login Portal Data Pelanggan")
+    st.markdown("Silakan masukkan nomor WhatsApp terdaftar untuk menerima kode OTP.")
+
     with st.form("login_form"):
         phone_input = st.text_input("Nomor WhatsApp (Contoh: 62812345678):")
         submit_phone = st.form_submit_button("Kirim Kode OTP")
@@ -45,25 +58,31 @@ if not st.session_state["authenticated"]:
                 otp = str(random.randint(100000, 999999))
                 st.session_state["generated_otp"] = otp
                 st.session_state["target_phone"] = phone_input
+                
+                # Kirim OTP via API WhatsApp
                 send_whatsapp_otp(phone_input, otp)
+                
                 st.session_state["otp_sent"] = True
-                st.success(f"Kode OTP dikirim ke {phone_input}!")
+                st.success(f"Kode OTP telah dikirim ke WhatsApp {phone_input}!")
             else:
-                st.error("Nomor WhatsApp tidak terdaftar.")
+                st.error("Nomor WhatsApp tidak terdaftar dalam sistem.")
 
     if st.session_state["otp_sent"]:
         with st.form("otp_form"):
             otp_input = st.text_input("Masukkan 6 Digit Kode OTP:", max_chars=6)
             verify_otp = st.form_submit_button("Verifikasi & Masuk")
+
             if verify_otp:
                 if otp_input == st.session_state["generated_otp"]:
                     st.session_state["authenticated"] = True
+                    st.success("Login berhasil! Memuat aplikasi...")
                     st.rerun()
                 else:
-                    st.error("Kode OTP salah.")
+                    st.error("Kode OTP salah. Silakan coba lagi.")
 
-# --- HALAMAN UTAMA ---
+# --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
+    # Tombol Logout di Sidebar
     if st.sidebar.button("🚪 Keluar / Logout"):
         st.session_state["authenticated"] = False
         st.session_state["otp_sent"] = False
@@ -74,7 +93,7 @@ else:
 
     try:
         st.sidebar.header("📂 Navigasi Wilayah")
-        # Hanya tampilkan wilayah yang file part 1 nya benar-benar ada
+        # Hanya tampilkan wilayah yang file part 1 nya benar-benar ada di direktori
         available_regions = [reg for reg, parts in DB_PARTS_MAPPING.items() if os.path.exists(parts[0])]
 
         if not available_regions:
@@ -86,13 +105,13 @@ else:
         # Ambil daftar file part yang benar-benar ada di disk
         valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
-        # Ambil struktur kolom dari part pertama
+        # Ambil struktur kolom dari part pertama database wilayah tersebut
         sample_conn = sqlite3.connect(valid_db_files[0])
         sample_df = pd.read_sql(f"SELECT * FROM [{selected_region}] LIMIT 5", sample_conn)
         all_columns = sample_df.columns.tolist()
         sample_conn.close()
 
-        # Kustomisasi Kolom Tampilan
+        # 1. Kustomisasi Kolom yang Ditampilkan
         st.sidebar.markdown("---")
         st.sidebar.subheader("👁️ Kustomisasi Kolom")
         selected_columns = st.sidebar.multiselect(
@@ -100,10 +119,12 @@ else:
             options=all_columns,
             default=all_columns[:min(5, len(all_columns))]
         )
+
         if not selected_columns:
+            st.warning("⚠️ Harap pilih minimal 1 kolom untuk ditampilkan.")
             selected_columns = all_columns
 
-        # Deteksi Kolom (Kota & Nama Pelanggan)
+        # 2. Deteksi Otomatis Kolom Kota & Nama Pelanggan
         kota_col = next((col for col in all_columns if 'kota' in col.lower() or 'kabupaten' in col.lower()), None)
         pelanggan_col = next((col for col in all_columns if 'nama' in col.lower() or 'pelanggan' in col.lower() or 'customer' in col.lower()), None)
 
@@ -112,7 +133,6 @@ else:
 
         pilih_kota = "Semua Kota"
         if kota_col:
-            # Ambil daftar kota unik dari seluruh part database wilayah tersebut
             all_cities = set()
             for db_f in valid_db_files:
                 c_conn = sqlite3.connect(db_f)
@@ -128,7 +148,7 @@ else:
         if pelanggan_col:
             cari_pelanggan = st.sidebar.text_input(f"Cari Berdasarkan {pelanggan_col}:", "")
 
-        # Gabungkan pencarian dari semua file part database wilayah tersebut
+        # 3. Gabungkan pencarian dari seluruh file part database wilayah tersebut secara aman
         filtered_dfs = []
         total_rows_all = 0
 
@@ -136,7 +156,6 @@ else:
             conn = sqlite3.connect(db_f)
             cursor = conn.cursor()
             
-            # Hitung total baris keseluruhan per part
             cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]")
             total_rows_all += cursor.fetchone()[0]
 
@@ -154,10 +173,9 @@ else:
             filtered_dfs.append(part_df)
             conn.close()
 
-        # Gabungkan hasil filter dari semua part
         df_filtered = pd.concat(filtered_dfs, ignore_index=True)
 
-        # Dashboard Tampilan Utama
+        # --- TAMPILAN DASHBOARD UTAMA ---
         col1, col2 = st.columns(2)
         col1.metric("📊 Data Pelanggan Ditemukan", f"{len(df_filtered):,} baris")
         col2.metric(f"📋 Total Seluruh Pelanggan {selected_region}", f"{total_rows_all:,} baris")
