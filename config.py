@@ -7,9 +7,9 @@ ALLOWED_PHONE_NUMBERS = [
     "6289876543210"
 ]
 
-# Pemetaan file database berdasarkan wilayah
-DB_MAPPING = {
-    "SURABAYA": "surabaya.db",
-    "SIDOARJO": "sidoarjo.db",
-    "GRESIK": "gresik.db"
+# Pemetaan file database terpecah berdasarkan wilayah (< 20MB per file)
+DB_PARTS_MAPPING = {
+    "SURABAYA": [f"surabaya_part{i}.db" for i in range(1, 10)],
+    "SIDOARJO": [f"sidoarjo_part{i}.db" for i in range(1, 10)],
+    "GRESIK": [f"gresik_part{i}.db" for i in range(1, 10)]
 }
