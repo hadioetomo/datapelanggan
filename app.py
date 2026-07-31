@@ -4,7 +4,13 @@ import sqlite3
 import os
 import random
 import requests
-from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, WHATSAPP_NUMBER_KEY, ALLOWED_PHONE_NUMBERS, DB_PARTS_MAPPING
+from config import (
+    WHATSAPP_API_URL, 
+    WHATSAPP_API_KEY, 
+    WHATSAPP_NUMBER_KEY, 
+    ALLOWED_PHONE_NUMBERS, 
+    DB_PARTS_MAPPING
+)
 
 # Konfigurasi Halaman Web
 st.set_page_config(
@@ -24,24 +30,28 @@ if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
 
 def send_whatsapp_otp(phone, otp_code):
+    # Format payload khusus untuk Watzap.id
     payload = {
-        "target": phone,
-        "message": f"Kode OTP Login Portal Data Pelanggan Anda adalah: *{otp_code}*. Jangan berikan kepada siapapun.",
+        "api_key": WHATSAPP_API_KEY,
+        "number_key": WHATSAPP_NUMBER_KEY,
+        "phone_no": phone,
+        "message": f"Kode OTP Login Portal Data Pelanggan Anda adalah: *{otp_code}*. Jangan berikan kepada siapapun."
     }
     
-    # Menambahkan number key ke payload jika diperlukan oleh provider API Anda
-    if WHATSAPP_NUMBER_KEY:
-        payload["number"] = WHATSAPP_NUMBER_KEY  # Ganti key parameter ini jika provider menggunakan nama lain (misal: device)
-
     headers = {
-        "Authorization": WHATSAPP_TOKEN
+        "Content-Type": "application/json"
     }
     
     try:
-        response = requests.post(WHATSAPP_API_URL, data=payload, headers=headers)
-        return response.status_code == 200
+        response = requests.post(WHATSAPP_API_URL, json=payload, headers=headers)
+        print("Respon Watzap API:", response.text)
+        
+        if response.status_code == 200:
+            res_data = response.json()
+            return res_data.get("status") == 200 or res_data.get("code") == 200 or "success" in str(res_data).lower()
+        return False
     except Exception as e:
-        print(f"Error WA API: {e}")
+        print(f"Error Watzap API: {e}")
         return False
 
 # --- HALAMAN LOGIN & OTP ---
@@ -59,7 +69,7 @@ if not st.session_state["authenticated"]:
                 st.session_state["generated_otp"] = otp
                 st.session_state["target_phone"] = phone_input
                 
-                # Kirim OTP via API WhatsApp
+                # Kirim OTP via Watzap API
                 send_whatsapp_otp(phone_input, otp)
                 
                 st.session_state["otp_sent"] = True
