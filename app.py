@@ -7,7 +7,7 @@ import requests
 from config import WHATSAPP_API_URL, WHATSAPP_TOKEN, ALLOWED_PHONE_NUMBERS, DB_PARTS_MAPPING
 
 st.set_page_config(
-    page_title="Portal Data Pelanggan",
+    page_title="Portal Data",
     page_icon="👥",
     layout="wide"
 )
@@ -35,7 +35,7 @@ def send_whatsapp_otp(phone, otp_code):
 
 # --- HALAMAN LOGIN ---
 if not st.session_state["authenticated"]:
-    st.title("🔐 Login Portal Data Pelanggan")
+    st.title("🔐 Login Data Pelanggan")
     with st.form("login_form"):
         phone_input = st.text_input("Nomor WhatsApp (Contoh: 62812345678):")
         submit_phone = st.form_submit_button("Kirim Kode OTP")
