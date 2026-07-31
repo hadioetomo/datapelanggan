@@ -21,7 +21,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Styling CSS Custom Modern & Kompatibel Mode Terang/Gelap
+# 2. Styling CSS Custom
 st.markdown("""
     <style>
         /* Force App Background & Base Font */
@@ -42,22 +42,11 @@ st.markdown("""
         .sub-header {
             font-size: 14px;
             color: #475569 !important;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             font-weight: 500;
         }
 
-        /* Filter Panel Container */
-        .filter-container {
-            background-color: #FFFFFF !important;
-            border: 1px solid #E2E8F0;
-            border-top: 4px solid #3B82F6;
-            padding: 20px;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            margin-bottom: 20px;
-        }
-
-        /* Override Streamlit Form Container untuk Card Login */
+        /* Form Container untuk Card Login */
         div[data-testid="stForm"] {
             background-color: #FFFFFF !important;
             border: 1px solid #E2E8F0 !important;
@@ -66,14 +55,14 @@ st.markdown("""
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
         }
 
-        /* Paksa Warna Teks Label & Input agar Terbaca di Layar HP/Dark Mode */
+        /* Force Label & Text Color Compatibility */
         label p, .stMarkdown p, h1, h2, h3, h4, h5, h6 {
             color: #0F172A !important;
         }
 
         /* Input Custom Styling */
         .stTextInput input {
-            background-color: #F8FAFC !important;
+            background-color: #FFFFFF !important;
             color: #0F172A !important;
             border-radius: 8px !important;
             border: 1px solid #CBD5E1 !important;
@@ -259,13 +248,11 @@ else:
     st.markdown('<p class="main-header">💎 Portal Informasi & Direktori Pelanggan</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Sistem pencarian data responsif, cepat, dan terintegrasi per wilayah</p>', unsafe_allow_html=True)
 
-    # Pemilihan Database Utama Wilayah
-    selected_region = st.selectbox("📂 Pilih Wilayah Database Utama:", available_regions)
-    valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
-
-    # Pemataan Sampel Kolom Database
-    sample_conn = sqlite3.connect(valid_db_files[0])
-    sample_df = pd.read_sql(f"SELECT * FROM [{selected_region}] LIMIT 1", sample_conn)
+    # Pemetaaan Sampel Kolom Database Wilayah Pertama untuk Deteksi Nama Kolom
+    sample_region = available_regions[0]
+    valid_db_sample = [f for f in DB_PARTS_MAPPING[sample_region] if os.path.exists(f)]
+    sample_conn = sqlite3.connect(valid_db_sample[0])
+    sample_df = pd.read_sql(f"SELECT * FROM [{sample_region}] LIMIT 1", sample_conn)
     all_columns = [col.strip() for col in sample_df.columns]
     sample_conn.close()
 
@@ -275,9 +262,6 @@ else:
                 return col
         return None
 
-    c_kota = find_col(['kota', 'kabupaten'])
-    c_building = find_col(['building_type', 'tipe_bangunan', 'jenis_bangunan'])
-    c_district = find_col(['district', 'kecamatan', 'area'])
     c_cluster = find_col(['cluster_name', 'cluster', 'nama_lokasi'])
     c_homepass = find_col(['homepass_id', 'homepass', 'id_homepass'])
     c_status = find_col(['home_pass_status', 'status'])
@@ -291,42 +275,27 @@ else:
     c_rt = find_col(['rt'])
     c_rw = find_col(['rw'])
 
-    # --- PANEL FILTER & PENCARIAN ---
-    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
-    st.markdown("##### 🔍 Panel Filter & Pencarian Cepat")
+    # --- PILIHAN WILAYAH & FILTER NAMA LOKASI DI BAGIAN ATAS ---
+    top_col1, top_col2 = st.columns(2)
+    
+    with top_col1:
+        selected_region = st.selectbox("📂 Pilih Wilayah Database Utama:", available_regions)
+    
+    valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
-    keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Nama Lokasi, Akun, atau Jalan:", "", placeholder="Ketik kata kunci pencarian...")
+    pilih_cluster = "Semua Lokasi / Cluster"
+    with top_col2:
+        if c_cluster:
+            daftar_cluster = ['Semua Lokasi / Cluster'] + get_distinct_values(tuple(valid_db_files), selected_region, c_cluster)
+            pilih_cluster = st.selectbox("🏡 Filter Nama Lokasi (Cluster):", daftar_cluster)
 
-    col_f1, col_f2, col_f3 = st.columns(3)
-
-    pilih_kota = "Semua Kota"
-    if c_kota:
-        daftar_kota = ['Semua Kota'] + get_distinct_values(tuple(valid_db_files), selected_region, c_kota)
-        with col_f1:
-            pilih_kota = st.selectbox("📍 Pilih Kota:", daftar_kota)
-
-    pilih_building = "Semua Jenis"
-    if c_building:
-        daftar_building = ['Semua Jenis'] + get_distinct_values(tuple(valid_db_files), selected_region, c_building)
-        with col_f2:
-            pilih_building = st.selectbox("🏢 Jenis Perumahan:", daftar_building)
-
-    pilih_district = "Semua Area"
-    if c_district:
-        daftar_district = ['Semua Area'] + get_distinct_values(tuple(valid_db_files), selected_region, c_district)
-        with col_f3:
-            pilih_district = st.selectbox("📍 Pilih Area (District):", daftar_district)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Pencarian Kata Kunci Cepat
+    keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian...")
 
     # --- KONSTRUKSI QUERY SQL MULTI-PART ---
     conditions = []
-    if pilih_kota != 'Semua Kota' and c_kota:
-        conditions.append(f"[{c_kota}] = '{pilih_kota}'")
-    if pilih_building != 'Semua Jenis' and c_building:
-        conditions.append(f"[{c_building}] = '{pilih_building}'")
-    if pilih_district != 'Semua Area' and c_district:
-        conditions.append(f"[{c_district}] = '{pilih_district}'")
+    if pilih_cluster != 'Semua Lokasi / Cluster' and c_cluster:
+        conditions.append(f"[{c_cluster}] = '{pilih_cluster}'")
 
     if keyword_search:
         search_conditions = []
