@@ -49,14 +49,6 @@ st.markdown("""
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
             margin-bottom: 20px;
         }
-        .sort-container {
-            background: #FFFFFF;
-            border-left: 4px solid #10B981;
-            padding: 12px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
-            margin-bottom: 20px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -326,23 +318,9 @@ else:
     if active_db_columns:
         display_df = df_filtered[active_db_columns].copy()
         display_df.columns = active_display_labels
-
-        # --- FITUR SORTIR (SORTING) HASIL PENCARIAN ---
-        st.markdown('<div class="sort-container">', unsafe_allow_html=True)
-        st.markdown("##### 🔃 Pengaturan Urutan Data (Sorting)")
-        s_col1, s_col2 = st.columns(2)
         
-        with s_col1:
-            sort_by_column = st.selectbox("Urutkan Berdasarkan Kolom:", options=active_display_labels)
-        with s_col2:
-            sort_order = st.radio("Metode Urutan:", options=["Ascending (A-Z / Terkecil)", "Descending (Z-A / Terbesar)"], horizontal=True)
-
-        # Terapkan Sortir pada DataFrame
-        is_ascending = True if "Ascending" in sort_order else False
-        display_df = display_df.sort_values(by=sort_by_column, ascending=is_ascending, na_position='last')
-        st.markdown('</div>', unsafe_allow_html=True)
-
         st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
+        # Menggunakan sorting bawaan tabel Streamlit (cukup klik header kolom di tabel)
         st.dataframe(display_df, use_container_width=True, height=580)
     else:
         st.warning("⚠️ Kolom spesifik tidak terdeteksi otomatis. Menampilkan seluruh kolom tersedia:")
