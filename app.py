@@ -135,8 +135,6 @@ if "generated_otp" not in st.session_state:
     st.session_state["generated_otp"] = ""
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
-if "page_number" not in st.session_state:
-    st.session_state["page_number"] = 1
 
 # Cek Kedaluwarsa Sesi Login (30 Menit)
 if st.session_state["authenticated"]:
@@ -350,43 +348,13 @@ else:
             total_matching_rows += cursor.fetchone()[0]
             conn.close()
 
-        # --- PAGINATION DENGAN TOMBOL PREVIOUS & NEXT ---
-        rows_per_page = 50
-        total_pages = max(1, (total_matching_rows + rows_per_page - 1) // rows_per_page)
-
-        # Reset Halaman jika melebihi total halaman baru
-        if st.session_state["page_number"] > total_pages:
-            st.session_state["page_number"] = 1
-
-        offset = (st.session_state["page_number"] - 1) * rows_per_page
-
-        # Eksekusi Query
+        # Tampilkan semua data dalam 1 halaman
         filtered_dfs = []
-        rows_needed = rows_per_page
-        current_offset = offset
-
         for db_f in valid_db_files:
-            if rows_needed <= 0:
-                break
-                
             conn = sqlite3.connect(db_f)
-            cursor = conn.cursor()
-            
-            cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
-            part_matches = cursor.fetchone()[0]
-
-            if current_offset >= part_matches:
-                current_offset -= part_matches
-                conn.close()
-                continue
-
-            query = f"SELECT * FROM [{selected_region}]" + where_clause + f" LIMIT {rows_needed} OFFSET {current_offset}"
+            query = f"SELECT * FROM [{selected_region}]" + where_clause + " LIMIT 100000"
             part_df = pd.read_sql(query, conn)
             filtered_dfs.append(part_df)
-
-            fetched = len(part_df)
-            rows_needed -= fetched
-            current_offset = 0
             conn.close()
 
         df_filtered = pd.concat(filtered_dfs, ignore_index=True) if filtered_dfs else pd.DataFrame()
@@ -399,24 +367,21 @@ else:
         st.markdown("---")
 
         if not df_filtered.empty:
-            # --- MEMBUAT GABUNGAN ALAMAT DALAM 1 KOLOM ---
+            # --- PENGGABUNGAN ALAMAT: Nama Lokasi, Blok, House No, RT, RW ---
             def format_full_address(row):
                 parts = []
                 cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
-                street_val = str(row[c_street]).strip() if c_street and pd.notna(row[c_street]) else ""
-                house_val = str(row[c_house]).strip() if c_house and pd.notna(row[c_house]) else ""
                 block_val = str(row[c_block]).strip() if c_block and pd.notna(row[c_block]) else ""
+                house_val = str(row[c_house]).strip() if c_house and pd.notna(row[c_house]) else ""
                 rt_val = str(row[c_rt]).strip() if c_rt and pd.notna(row[c_rt]) else ""
                 rw_val = str(row[c_rw]).strip() if c_rw and pd.notna(row[c_rw]) else ""
 
                 if cluster_val:
                     parts.append(f"[{cluster_val}]")
-                if street_val:
-                    parts.append(street_val)
-                if house_val:
-                    parts.append(f"No. {house_val}")
                 if block_val:
                     parts.append(f"Blok {block_val}")
+                if house_val:
+                    parts.append(f"No. {house_val}")
                 if rt_val or rw_val:
                     parts.append(f"RT/RW: {rt_val or '-'}/{rw_val or '-'}")
 
@@ -424,10 +389,10 @@ else:
 
             df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
 
-            # Pemetaan Kolom Tampilan
+            # Pemetaan Kolom Tampilan (Alamat / Lokasi Pelanggan ditaruh pertama, baru Homepass ID)
             col_mapping_target = {
-                "Homepass ID": c_homepass,
                 "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
+                "Homepass ID": c_homepass,
                 "Home Pass Status": c_status,
                 "Class": c_class,
                 "Contract Account": c_contract,
@@ -446,33 +411,18 @@ else:
             display_df = df_filtered[active_db_columns].copy()
             display_df.columns = active_display_labels
 
-            # Header Tabel Hasil & Navigasi Tombol
+            # Header Tabel Hasil
             st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
             
             event = st.dataframe(
                 display_df, 
                 use_container_width=True, 
-                height=480,
+                height=550,
                 selection_mode="single-row",
                 on_select="rerun"
             )
 
-            # Tombol Navigasi Halaman (Previous & Next)
-            btn_col1, btn_col2, btn_col3 = st.columns([1, 2, 1])
-            with btn_col1:
-                if st.button("◀️ Previous", use_container_width=True, disabled=(st.session_state["page_number"] <= 1)):
-                    st.session_state["page_number"] -= 1
-                    st.rerun()
-
-            with btn_col2:
-                st.markdown(f"<p style='text-align: center; margin-top: 8px; font-weight: 600;'>Halaman {st.session_state['page_number']} dari {total_pages}</p>", unsafe_allow_html=True)
-
-            with btn_col3:
-                if st.button("Next ▶️", use_container_width=True, disabled=(st.session_state["page_number"] >= total_pages)):
-                    st.session_state["page_number"] += 1
-                    st.rerun()
-
-            # Pop-up Detail
+            # Pop-up Detail Informasi
             selected_rows = event.selection.get("rows", [])
             if selected_rows:
                 row_idx = selected_rows[0]
@@ -481,8 +431,8 @@ else:
                 @st.dialog("💎 Detail Informasi Pelanggan")
                 def show_detail_dialog(data):
                     st.markdown("#### Informasi Alamat & Identitas")
-                    st.write(f"**Homepass ID:** `{data.get(c_homepass, 'N/A')}`")
                     st.write(f"**Alamat Lengkap:** {data.get('Alamat / Lokasi Pelanggan', 'N/A')}")
+                    st.write(f"**Homepass ID:** `{data.get(c_homepass, 'N/A')}`")
                     st.markdown("---")
                     st.markdown("#### Informasi Layanan & Kontrak")
                     st.write(f"**Status Homepass:** `{data.get(c_status, 'N/A')}`")
