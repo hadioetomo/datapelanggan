@@ -18,93 +18,100 @@ st.set_page_config(
     page_title="Portal Data Pelanggan Eksekutif",
     page_icon="💎",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# 2. Styling CSS Custom Modern & Elegan
+# 2. Styling CSS Custom Modern & Kompatibel Mode Terang/Gelap
 st.markdown("""
     <style>
-        /* Modern Clean Background */
+        /* Force App Background & Base Font */
         .stApp {
-            background-color: #F8FAFC;
+            background-color: #F8FAFC !important;
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
         
         /* Main Header Styling */
         .main-header {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 800;
             background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 2px;
-            letter-spacing: -0.5px;
         }
         .sub-header {
             font-size: 14px;
-            color: #64748B;
+            color: #475569 !important;
             margin-bottom: 24px;
             font-weight: 500;
         }
 
         /* Filter Panel Container */
         .filter-container {
-            background: #FFFFFF;
+            background-color: #FFFFFF !important;
             border: 1px solid #E2E8F0;
             border-top: 4px solid #3B82F6;
-            padding: 24px;
+            padding: 20px;
             border-radius: 16px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
-            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
         }
 
-        /* Login Card Container */
-        .login-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            padding: 32px;
-            border-radius: 20px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+        /* Override Streamlit Form Container untuk Card Login */
+        div[data-testid="stForm"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            padding: 24px !important;
+            border-radius: 16px !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+        }
+
+        /* Paksa Warna Teks Label & Input agar Terbaca di Layar HP/Dark Mode */
+        label p, .stMarkdown p, h1, h2, h3, h4, h5, h6 {
+            color: #0F172A !important;
+        }
+
+        /* Input Custom Styling */
+        .stTextInput input {
+            background-color: #F8FAFC !important;
+            color: #0F172A !important;
+            border-radius: 8px !important;
+            border: 1px solid #CBD5E1 !important;
+        }
+        .stTextInput input:focus {
+            border-color: #3B82F6 !important;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
         }
 
         /* Metric Styling Custom */
         div[data-testid="stMetric"] {
-            background-color: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-left: 5px solid #3B82F6;
-            padding: 16px;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            background-color: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            border-left: 5px solid #3B82F6 !important;
+            padding: 14px !important;
+            border-radius: 12px !important;
         }
-        div[data-testid="stMetricLabel"] {
+        div[data-testid="stMetricLabel"] p {
             font-size: 13px !important;
             color: #64748B !important;
             font-weight: 600 !important;
         }
-        div[data-testid="stMetricValue"] {
+        div[data-testid="stMetricValue"] div {
             font-size: 22px !important;
             color: #0F172A !important;
             font-weight: 700 !important;
         }
 
-        /* Input Custom Styling */
-        .stTextInput > div > div > input {
-            border-radius: 8px !important;
-            border: 1px solid #CBD5E1 !important;
-        }
-        .stTextInput > div > div > input:focus {
-            border-color: #3B82F6 !important;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
-        }
-        
         /* General Buttons */
         .stButton>button {
             border-radius: 8px !important;
             font-weight: 600 !important;
-            transition: all 0.2s ease !important;
+            background-color: #1E3A8A !important;
+            color: #FFFFFF !important;
+            border: none !important;
         }
         .stButton>button:hover {
-            transform: translateY(-1px);
+            background-color: #2563EB !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -129,8 +136,6 @@ if "generated_otp" not in st.session_state:
     st.session_state["generated_otp"] = ""
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
-if "current_page" not in st.session_state:
-    st.session_state["current_page"] = 1
 
 # Cek Kedaluwarsa Sesi Login (30 Menit)
 if st.session_state["authenticated"]:
@@ -158,7 +163,7 @@ def send_whatsapp_otp(phone, otp_code):
         print(f"Error Watzap API: {e}")
         return False
 
-# 5. Fungsi Caching Query Dropdown (Mengoptimalkan RAM & Kecepatan Database)
+# 5. Fungsi Caching Query Dropdown
 @st.cache_data(ttl=3600)
 def get_distinct_values(db_files, region, column_name):
     if not column_name:
@@ -184,15 +189,15 @@ def mask_phone_number(phone):
 
 # --- HALAMAN LOGIN & OTP ---
 if not st.session_state["authenticated"]:
-    _, col2, _ = st.columns([1, 1.8, 1])
+    _, col2, _ = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        st.markdown("### 💎 Portal Akses Eksekutif")
-        st.markdown("<p style='color: #64748B; font-size: 14px;'>Autentikasi dua langkah aman via WhatsApp Gateway.</p>", unsafe_allow_html=True)
-        st.markdown("---")
-
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Form Login
         with st.form("login_form"):
+            st.markdown("### 💎 Portal Akses Eksekutif")
+            st.markdown("<p style='color: #64748B; font-size: 13px; margin-bottom: 15px;'>Autentikasi dua langkah aman via WhatsApp Gateway.</p>", unsafe_allow_html=True)
+            
             phone_input = st.text_input("📱 Nomor WhatsApp (Contoh: 62812345678):")
             submit_phone = st.form_submit_button("🚀 Kirim Kode OTP", use_container_width=True)
 
@@ -214,10 +219,12 @@ if not st.session_state["authenticated"]:
                 else:
                     st.error("❌ Nomor WhatsApp tidak terdaftar dalam sistem.")
 
+        # Form OTP (Muncul setelah OTP Terkirim)
         if st.session_state["otp_sent"]:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.form("otp_form"):
-                otp_input = st.text_input("🔑 Masukkan 6 Digit Kode OTP:", max_chars=6)
+                st.markdown("##### 🔑 Verifikasi Kode OTP")
+                otp_input = st.text_input("Masukkan 6 Digit Kode OTP:", max_chars=6)
                 verify_otp = st.form_submit_button("✨ Verifikasi & Masuk", use_container_width=True)
 
                 if verify_otp:
@@ -231,15 +238,14 @@ if not st.session_state["authenticated"]:
                         st.rerun()
                     else:
                         st.error("❌ Kode OTP salah.")
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
-    # Sidebar Informasi Akun & Sesi
+    # Sidebar Informasi Akun
     st.sidebar.markdown("### 🛡️ Keamanan Sesi")
     st.sidebar.info(f"Pengguna: `{mask_phone_number(st.session_state['target_phone'])}`")
     
-    if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True, type="secondary"):
+    if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
         st.session_state["authenticated"] = False
         st.session_state["otp_sent"] = False
         st.rerun()
@@ -257,7 +263,7 @@ else:
     selected_region = st.selectbox("📂 Pilih Wilayah Database Utama:", available_regions)
     valid_db_files = [f for f in DB_PARTS_MAPPING[selected_region] if os.path.exists(f)]
 
-    # Pemetaan Sampel Kolom Database
+    # Pemataan Sampel Kolom Database
     sample_conn = sqlite3.connect(valid_db_files[0])
     sample_df = pd.read_sql(f"SELECT * FROM [{selected_region}] LIMIT 1", sample_conn)
     all_columns = [col.strip() for col in sample_df.columns]
@@ -332,7 +338,7 @@ else:
 
     where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
 
-    # Hitung Jumlah Baris (Count Queries)
+    # Hitung Jumlah Baris
     total_matching_rows = 0
     total_db_rows = 0
 
@@ -346,7 +352,7 @@ else:
         total_matching_rows += cursor.fetchone()[0]
         conn.close()
 
-    # --- PENGATURAN PAGINATION SERVER-SIDE ---
+    # --- PAGINATION SERVER-SIDE ---
     rows_per_page = 50
     total_pages = max(1, (total_matching_rows + rows_per_page - 1) // rows_per_page)
     
@@ -356,9 +362,8 @@ else:
     
     offset = (page_number - 1) * rows_per_page
 
-    # Eksekusi Query Ambil Data Terbatas (Limit & Offset)
+    # Eksekusi Query
     filtered_dfs = []
-    accumulated = 0
     rows_needed = rows_per_page
     current_offset = offset
 
@@ -369,7 +374,6 @@ else:
         conn = sqlite3.connect(db_f)
         cursor = conn.cursor()
         
-        # Hitung baris yang cocok di part file ini
         cursor.execute(f"SELECT COUNT(*) FROM [{selected_region}]" + where_clause)
         part_matches = cursor.fetchone()[0]
 
@@ -384,19 +388,19 @@ else:
 
         fetched = len(part_df)
         rows_needed -= fetched
-        current_offset = 0  # Offset hanya berlaku untuk part pertama yang match
+        current_offset = 0
         conn.close()
 
     df_filtered = pd.concat(filtered_dfs, ignore_index=True) if filtered_dfs else pd.DataFrame()
 
-    # Tampilan Metrik Ringkas
+    # Metrik Ringkas
     m1, m2, m3 = st.columns(3)
     m1.metric("📊 Filter Ditemukan", f"{total_matching_rows:,} baris")
     m2.metric("📋 Total Keseluruhan Data", f"{total_db_rows:,} baris")
     m3.metric("📌 Wilayah Database", selected_region)
     st.markdown("---")
 
-    # Kolom Hasil Tampilan Tabel
+    # Mapping Kolom
     col_mapping_target = {
         "Homepass ID": c_homepass,
         "Nama Lokasi (Cluster)": c_cluster,
@@ -424,9 +428,8 @@ else:
         display_df = df_filtered[active_db_columns].copy()
         display_df.columns = active_display_labels
 
-        st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}** *(Menampilkan max {rows_per_page} baris/halaman)*")
+        st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}** *(Max {rows_per_page} baris/halaman)*")
         
-        # Event Interaktif Pilihan Baris (Row Selection)
         event = st.dataframe(
             display_df, 
             use_container_width=True, 
@@ -435,7 +438,6 @@ else:
             on_select="rerun"
         )
         
-        # --- FITUR MODAL POP-UP DETAIL DATA ---
         selected_rows = event.selection.get("rows", [])
         if selected_rows:
             row_idx = selected_rows[0]
@@ -462,4 +464,4 @@ else:
         st.warning("⚠️ Kolom spesifik tidak terdeteksi otomatis. Menampilkan seluruh kolom tersedia:")
         st.dataframe(df_filtered, use_container_width=True, height=500)
     else:
-        st.info("ℹ️ Tidak ada data yang sesuai dengan kombinasi filter dan pencarian Anda.")
+        st.info("ℹ️ Tidak ada data yang sesuai dengan pencarian Anda.")
