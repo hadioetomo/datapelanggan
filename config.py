@@ -5,7 +5,8 @@ WHATSAPP_NUMBER_KEY = "4Kpb4E1ohwAcU7XT"
 
 ALLOWED_PHONE_NUMBERS = [
     "6282139934994",
-    "6282131229933"
+    "6282131229933",
+"6282244722287"
 ]
 
 # Pemetaan file database terpecah berdasarkan wilayah (< 20MB per file)
