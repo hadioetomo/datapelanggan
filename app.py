@@ -146,14 +146,11 @@ if auth_cookie and login_time_cookie:
     current_time = time.time()
     try:
         last_login_time = float(login_time_cookie)
-        # Cek durasi inaktivitas (30 menit)
         if current_time - last_login_time <= SESSION_TIMEOUT:
             st.session_state["authenticated"] = True
             st.session_state["target_phone"] = auth_cookie
-            # Perbarui timestamp aktivitas terakhir
             cookie_manager.set('login_time', str(current_time), key="update_timer")
         else:
-            # Hapus Cookie jika waktu habis
             cookie_manager.delete('auth_user', key="del_user_exp")
             cookie_manager.delete('login_time', key="del_time_exp")
             st.session_state["authenticated"] = False
@@ -210,7 +207,6 @@ if not st.session_state["authenticated"]:
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Form Login
         with st.form("login_form"):
             st.markdown("### 💎 Portal Akses Eksekutif")
             st.markdown("<p style='color: #64748B; font-size: 13px; margin-bottom: 15px;'>Autentikasi dua langkah aman via WhatsApp Gateway.</p>", unsafe_allow_html=True)
@@ -236,7 +232,6 @@ if not st.session_state["authenticated"]:
                 else:
                     st.error("❌ Nomor WhatsApp tidak terdaftar dalam sistem.")
 
-        # Form OTP (Muncul setelah OTP Terkirim)
         if st.session_state["otp_sent"]:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.form("otp_form"):
@@ -249,7 +244,6 @@ if not st.session_state["authenticated"]:
                         st.error("❌ Kode OTP telah kedaluwarsa. Silakan kirim ulang.")
                         st.session_state["otp_sent"] = False
                     elif otp_input == st.session_state["generated_otp"]:
-                        # Simpan ke Cookie
                         cookie_manager.set('auth_user', st.session_state["target_phone"], key="set_user")
                         cookie_manager.set('login_time', str(time.time()), key="set_time")
                         st.session_state["authenticated"] = True
@@ -260,7 +254,6 @@ if not st.session_state["authenticated"]:
 
 # --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
-    # Sidebar Informasi Akun & Tombol Logout
     st.sidebar.markdown("### 🛡️ Keamanan Sesi")
     st.sidebar.info(f"Pengguna: `{mask_phone_number(st.session_state['target_phone'])}`")
     
@@ -276,11 +269,9 @@ else:
         st.error("⚠️ Tidak ditemukan file database pecahan part di direktori server.")
         st.stop()
 
-    # Header Utama Portal
     st.markdown('<p class="main-header">💎 Portal Informasi & Direktori Pelanggan</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Sistem pencarian data responsif, cepat, dan terintegrasi per wilayah</p>', unsafe_allow_html=True)
 
-    # Deteksi Nama Kolom
     sample_region = available_regions[0]
     valid_db_sample = [f for f in DB_PARTS_MAPPING[sample_region] if os.path.exists(f)]
     sample_conn = sqlite3.connect(valid_db_sample[0])
@@ -307,7 +298,6 @@ else:
     c_rt = find_col(['rt'])
     c_rw = find_col(['rw'])
 
-    # --- PILIHAN WILAYAH & FILTER NAMA LOKASI DI BAGIAN ATAS ---
     top_col1, top_col2 = st.columns(2)
     
     with top_col1:
@@ -321,13 +311,10 @@ else:
             daftar_cluster = ['Semua Lokasi / Cluster'] + get_distinct_values(tuple(valid_db_files), selected_region, c_cluster)
             pilih_cluster = st.selectbox("🏡 Filter Nama Lokasi (Cluster):", daftar_cluster)
 
-    # Pencarian Kata Kunci Cepat
     keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian untuk menampilkan data...")
 
-    # Cek Aktivitas Input Pencarian
     is_search_active = bool(keyword_search.strip()) or (pilih_cluster != "Semua Lokasi / Cluster")
 
-    # Hitung total Keseluruhan Data
     total_db_rows = 0
     for db_f in valid_db_files:
         conn = sqlite3.connect(db_f)
@@ -336,7 +323,6 @@ else:
         total_db_rows += cursor.fetchone()[0]
         conn.close()
 
-    # --- JIKA BELUM MENGISI SEARCH/FILTER, TAMPILKAN INSTRUKSI (DATA KOSONG) ---
     if not is_search_active:
         m1, m2, m3 = st.columns(3)
         m1.metric("📊 Filter Ditemukan", "0 baris")
@@ -345,7 +331,6 @@ else:
         st.markdown("---")
         st.info("💡 Silakan isi kata kunci pencarian di atas atau pilih **Nama Lokasi (Cluster)** untuk menampilkan data pelanggan.")
 
-    # --- JIKA SUDAH MENGISI SEARCH/FILTER, PROSES DATA ---
     else:
         conditions = []
         if pilih_cluster != 'Semua Lokasi / Cluster' and c_cluster:
@@ -361,7 +346,6 @@ else:
 
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
 
-        # Hitung Jumlah Baris Terfilter
         total_matching_rows = 0
         for db_f in valid_db_files:
             conn = sqlite3.connect(db_f)
@@ -370,7 +354,6 @@ else:
             total_matching_rows += cursor.fetchone()[0]
             conn.close()
 
-        # Load Semua Hasil Data dalam 1 Halaman (Tanpa Paginasi)
         filtered_dfs = []
         for db_f in valid_db_files:
             conn = sqlite3.connect(db_f)
@@ -381,7 +364,6 @@ else:
 
         df_filtered = pd.concat(filtered_dfs, ignore_index=True) if filtered_dfs else pd.DataFrame()
 
-        # Metrik Ringkas
         m1, m2, m3 = st.columns(3)
         m1.metric("📊 Filter Ditemukan", f"{total_matching_rows:,} baris")
         m2.metric("📋 Total Keseluruhan Data", f"{total_db_rows:,} baris")
@@ -389,7 +371,6 @@ else:
         st.markdown("---")
 
         if not df_filtered.empty:
-            # --- PENGGABUNGAN ALAMAT: Nama Lokasi, Blok, House No, Nama Jalan, RT, RW ---
             def format_full_address(row):
                 parts = []
                 cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
@@ -414,7 +395,6 @@ else:
 
             df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
 
-            # Pemetaan Kolom (Alamat Utama berada di urutan pertama)
             col_mapping_target = {
                 "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
                 "Homepass ID": c_homepass,
@@ -436,7 +416,6 @@ else:
             display_df = df_filtered[active_db_columns].copy()
             display_df.columns = active_display_labels
 
-            # Header Tabel Hasil
             st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
             
             event = st.dataframe(
@@ -447,7 +426,6 @@ else:
                 on_select="rerun"
             )
 
-            # Pop-up Detail Informasi
             selected_rows = event.selection.get("rows", [])
             if selected_rows:
                 row_idx = selected_rows[0]
