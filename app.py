@@ -5,6 +5,7 @@ import os
 import random
 import time
 import requests
+import extra_streamlit_components as stx
 from config import (
     WHATSAPP_API_URL, 
     WHATSAPP_API_KEY, 
@@ -21,7 +22,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Styling CSS Custom
+# 2. Inisialisasi Cookie Manager untuk Refresh-Proof Session
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
+
+# 3. Styling CSS Custom
 st.markdown("""
     <style>
         /* Force App Background & Base Font */
@@ -116,15 +124,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Konstanta Waktu (dalam detik)
-SESSION_TIMEOUT = 30 * 60   # 30 Menit
-OTP_TIMEOUT = 2 * 60        # 2 Menit
-OTP_COOLDOWN = 60           # 60 Detik Jeda Kirim Ulang OTP
+SESSION_TIMEOUT = 30 * 60   # 30 Menit Sesi Login
+OTP_TIMEOUT = 2 * 60        # 2 Menit OTP
+OTP_COOLDOWN = 60           # 60 Detik Jeda OTP
 
-# 3. Inisialisasi Session State
+# 4. Inisialisasi State & Cek Cookie
+auth_cookie = cookie_manager.get('auth_user')
+login_time_cookie = cookie_manager.get('login_time')
+
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
-if "login_time" not in st.session_state:
-    st.session_state["login_time"] = 0
 if "otp_sent" not in st.session_state:
     st.session_state["otp_sent"] = False
 if "otp_time" not in st.session_state:
@@ -136,14 +145,25 @@ if "generated_otp" not in st.session_state:
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
 
-# Cek Kedaluwarsa Sesi Login (30 Menit)
-if st.session_state["authenticated"]:
-    if time.time() - st.session_state["login_time"] > SESSION_TIMEOUT:
+# Validasi Login Sesi Browser dari Cookie (Tahan Refresh)
+if auth_cookie and login_time_cookie:
+    current_time = time.time()
+    last_login_time = float(login_time_cookie)
+    
+    # Cek durasi inaktivitas (30 menit)
+    if current_time - last_login_time <= SESSION_TIMEOUT:
+        st.session_state["authenticated"] = True
+        st.session_state["target_phone"] = auth_cookie
+        # Perbarui waktu aktivitas terakhir
+        cookie_manager.set('login_time', str(current_time), key="update_timer")
+    else:
+        # Hapus Cookie jika sudah kedaluwarsa
+        cookie_manager.delete('auth_user', key="del_user_exp")
+        cookie_manager.delete('login_time', key="del_time_exp")
         st.session_state["authenticated"] = False
-        st.warning("⏱️ Sesi login Anda telah berakhir (30 menit). Silakan login kembali.")
-        st.rerun()
+        st.warning("⏱️ Sesi login Anda telah berakhir (30 menit inaktif). Silakan login kembali.")
 
-# 4. Fungsi Kirim OTP via WhatsApp
+# 5. Fungsi Kirim OTP via WhatsApp
 def send_whatsapp_otp(phone, otp_code):
     payload = {
         "api_key": WHATSAPP_API_KEY,
@@ -162,7 +182,7 @@ def send_whatsapp_otp(phone, otp_code):
         print(f"Error Watzap API: {e}")
         return False
 
-# 5. Fungsi Caching Query Dropdown
+# 6. Fungsi Caching Query Dropdown
 @st.cache_data(ttl=3600)
 def get_distinct_values(db_files, region, column_name):
     if not column_name:
@@ -231,8 +251,10 @@ if not st.session_state["authenticated"]:
                         st.error("❌ Kode OTP telah kedaluwarsa. Silakan kirim ulang.")
                         st.session_state["otp_sent"] = False
                     elif otp_input == st.session_state["generated_otp"]:
+                        # Simpan ke Session Cookie (Bertahan saat Refresh)
+                        cookie_manager.set('auth_user', st.session_state["target_phone"], key="set_user")
+                        cookie_manager.set('login_time', str(time.time()), key="set_time")
                         st.session_state["authenticated"] = True
-                        st.session_state["login_time"] = time.time()
                         st.success("🎉 Login berhasil! Memuat data...")
                         st.rerun()
                     else:
@@ -240,11 +262,13 @@ if not st.session_state["authenticated"]:
 
 # --- HALAMAN UTAMA APLIKASI (SETELAH LOGIN) ---
 else:
-    # Sidebar Informasi Akun
+    # Sidebar Informasi Akun & Tombol Logout
     st.sidebar.markdown("### 🛡️ Keamanan Sesi")
     st.sidebar.info(f"Pengguna: `{mask_phone_number(st.session_state['target_phone'])}`")
     
     if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
+        cookie_manager.delete('auth_user', key="del_user_logout")
+        cookie_manager.delete('login_time', key="del_time_logout")
         st.session_state["authenticated"] = False
         st.session_state["otp_sent"] = False
         st.rerun()
@@ -258,7 +282,7 @@ else:
     st.markdown('<p class="main-header">💎 Portal Informasi & Direktori Pelanggan</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Sistem pencarian data responsif, cepat, dan terintegrasi per wilayah</p>', unsafe_allow_html=True)
 
-    # Pemetaaan Sampel Kolom Database Wilayah Pertama untuk Deteksi Nama Kolom
+    # Deteksi Nama Kolom
     sample_region = available_regions[0]
     valid_db_sample = [f for f in DB_PARTS_MAPPING[sample_region] if os.path.exists(f)]
     sample_conn = sqlite3.connect(valid_db_sample[0])
@@ -302,7 +326,7 @@ else:
     # Pencarian Kata Kunci Cepat
     keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian untuk menampilkan data...")
 
-    # Cek apakah pengguna sudah memasukkan input pencarian/filter
+    # Cek Aktivitas Input Pencarian
     is_search_active = bool(keyword_search.strip()) or (pilih_cluster != "Semua Lokasi / Cluster")
 
     # Hitung total Keseluruhan Data
@@ -348,7 +372,7 @@ else:
             total_matching_rows += cursor.fetchone()[0]
             conn.close()
 
-        # Tampilkan semua data dalam 1 halaman
+        # Load Semua Hasil Data dalam 1 Halaman
         filtered_dfs = []
         for db_f in valid_db_files:
             conn = sqlite3.connect(db_f)
@@ -367,12 +391,13 @@ else:
         st.markdown("---")
 
         if not df_filtered.empty:
-            # --- PENGGABUNGAN ALAMAT: Nama Lokasi, Blok, House No, RT, RW ---
+            # --- PENGGABUNGAN ALAMAT KELOMPOK LENGKAP: Nama Lokasi, Blok, House No, Nama Jalan, RT, RW ---
             def format_full_address(row):
                 parts = []
                 cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
                 block_val = str(row[c_block]).strip() if c_block and pd.notna(row[c_block]) else ""
                 house_val = str(row[c_house]).strip() if c_house and pd.notna(row[c_house]) else ""
+                street_val = str(row[c_street]).strip() if c_street and pd.notna(row[c_street]) else ""
                 rt_val = str(row[c_rt]).strip() if c_rt and pd.notna(row[c_rt]) else ""
                 rw_val = str(row[c_rw]).strip() if c_rw and pd.notna(row[c_rw]) else ""
 
@@ -382,6 +407,8 @@ else:
                     parts.append(f"Blok {block_val}")
                 if house_val:
                     parts.append(f"No. {house_val}")
+                if street_val:
+                    parts.append(f"Jl. {street_val}")
                 if rt_val or rw_val:
                     parts.append(f"RT/RW: {rt_val or '-'}/{rw_val or '-'}")
 
@@ -389,7 +416,7 @@ else:
 
             df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
 
-            # Pemetaan Kolom Tampilan (Alamat / Lokasi Pelanggan ditaruh pertama, baru Homepass ID)
+            # Pemetaan Kolom Tampilan
             col_mapping_target = {
                 "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
                 "Homepass ID": c_homepass,
