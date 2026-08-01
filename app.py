@@ -28,10 +28,13 @@ cookie_manager = stx.CookieManager()
 # 3. Styling CSS Custom
 st.markdown("""
     <style>
+        /* Force App Background & Base Font */
         .stApp {
             background-color: #F8FAFC !important;
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
+        
+        /* Main Header Styling */
         .main-header {
             font-size: 26px;
             font-weight: 800;
@@ -46,6 +49,8 @@ st.markdown("""
             margin-bottom: 20px;
             font-weight: 500;
         }
+
+        /* Form Container untuk Card Login */
         div[data-testid="stForm"] {
             background-color: #FFFFFF !important;
             border: 1px solid #E2E8F0 !important;
@@ -53,9 +58,13 @@ st.markdown("""
             border-radius: 16px !important;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
         }
+
+        /* Force Label & Text Color Compatibility */
         label p, .stMarkdown p, h1, h2, h3, h4, h5, h6 {
             color: #0F172A !important;
         }
+
+        /* Input Custom Styling */
         .stTextInput input {
             background-color: #FFFFFF !important;
             color: #0F172A !important;
@@ -66,6 +75,8 @@ st.markdown("""
             border-color: #3B82F6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
         }
+
+        /* Metric Styling Custom */
         div[data-testid="stMetric"] {
             background-color: #FFFFFF !important;
             border: 1px solid #E2E8F0 !important;
@@ -83,6 +94,8 @@ st.markdown("""
             color: #0F172A !important;
             font-weight: 700 !important;
         }
+
+        /* Freeze Header Tabel Dataframe */
         div[data-testid="stDataFrame"] div[role="columnheader"] {
             position: sticky !important;
             top: 0 !important;
@@ -91,6 +104,13 @@ st.markdown("""
             color: #0F172A !important;
             font-weight: 700 !important;
         }
+
+        /* Sembunyikan Tombol Toolbar (Download CSV / Search / Zoom) pada st.dataframe */
+        [data-testid="stElementToolbar"] {
+            display: none !important;
+        }
+
+        /* General Buttons */
         .stButton>button {
             border-radius: 8px !important;
             font-weight: 600 !important;
@@ -105,11 +125,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Konstanta Waktu (dalam detik)
-SESSION_TIMEOUT = 30 * 60   # 30 Menit Sesi Login
+SESSION_TIMEOUT = 30 * 60   # 30 Menit Sesi Login (Inaktif)
 OTP_TIMEOUT = 2 * 60        # 2 Menit OTP
 OTP_COOLDOWN = 60           # 60 Detik Jeda OTP
 
-# 4. Inisialisasi State & Pemulihan Sesi dari Cookie
+# 4. Inisialisasi State & Cek Cookie
+auth_cookie = cookie_manager.get('auth_user')
+login_time_cookie = cookie_manager.get('login_time')
+
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "otp_sent" not in st.session_state:
@@ -123,19 +146,20 @@ if "generated_otp" not in st.session_state:
 if "target_phone" not in st.session_state:
     st.session_state["target_phone"] = ""
 
-auth_cookie = cookie_manager.get('auth_user')
-login_time_cookie = cookie_manager.get('login_time')
-
-if auth_cookie and login_time_cookie and not st.session_state["authenticated"]:
+# Validasi Login Sesi Browser dari Cookie (Tahan Refresh)
+if auth_cookie and login_time_cookie:
     current_time = time.time()
     try:
         last_login_time = float(login_time_cookie)
         if current_time - last_login_time <= SESSION_TIMEOUT:
             st.session_state["authenticated"] = True
             st.session_state["target_phone"] = auth_cookie
+            cookie_manager.set('login_time', str(current_time), key="update_timer")
         else:
             cookie_manager.delete('auth_user', key="del_user_exp")
             cookie_manager.delete('login_time', key="del_time_exp")
+            st.session_state["authenticated"] = False
+            st.warning("⏱️ Sesi login Anda telah berakhir (30 menit inaktif). Silakan login kembali.")
     except ValueError:
         pass
 
@@ -253,6 +277,7 @@ else:
     st.markdown('<p class="main-header">💎 Portal Informasi & Direktori Pelanggan</p>', unsafe_allow_html=True)
     st.markdown('<p class="sub-header">Sistem pencarian data responsif, cepat, dan terintegrasi per wilayah</p>', unsafe_allow_html=True)
 
+    # Deteksi Nama Kolom Database
     sample_region = available_regions[0]
     valid_db_sample = [f for f in DB_PARTS_MAPPING[sample_region] if os.path.exists(f)]
     sample_conn = sqlite3.connect(valid_db_sample[0])
@@ -279,6 +304,7 @@ else:
     c_rt = find_col(['rt'])
     c_rw = find_col(['rw'])
 
+    # --- PILIHAN WILAYAH & FILTER NAMA LOKASI DI BAGIAN ATAS ---
     top_col1, top_col2 = st.columns(2)
     
     with top_col1:
@@ -292,10 +318,12 @@ else:
             daftar_cluster = ['Semua Lokasi / Cluster'] + get_distinct_values(tuple(valid_db_files), selected_region, c_cluster)
             pilih_cluster = st.selectbox("🏡 Filter Nama Lokasi (Cluster):", daftar_cluster)
 
+    # Pencarian Kata Kunci Cepat
     keyword_search = st.text_input("🔎 Cari Berdasarkan ID, Akun, Jalan, atau Paket:", "", placeholder="Ketik kata kunci pencarian untuk menampilkan data...")
 
     is_search_active = bool(keyword_search.strip()) or (pilih_cluster != "Semua Lokasi / Cluster")
 
+    # Hitung total Keseluruhan Data
     total_db_rows = 0
     for db_f in valid_db_files:
         conn = sqlite3.connect(db_f)
@@ -304,6 +332,7 @@ else:
         total_db_rows += cursor.fetchone()[0]
         conn.close()
 
+    # --- JIKA BELUM MENGISI SEARCH/FILTER, TAMPILKAN INSTRUKSI ---
     if not is_search_active:
         m1, m2, m3 = st.columns(3)
         m1.metric("📊 Filter Ditemukan", "0 baris")
@@ -312,6 +341,7 @@ else:
         st.markdown("---")
         st.info("💡 Silakan isi kata kunci pencarian di atas atau pilih **Nama Lokasi (Cluster)** untuk menampilkan data pelanggan.")
 
+    # --- JIKA SUDAH MENGISI SEARCH/FILTER, PROSES DATA ---
     else:
         conditions = []
         if pilih_cluster != 'Semua Lokasi / Cluster' and c_cluster:
@@ -319,7 +349,7 @@ else:
 
         if keyword_search:
             search_conditions = []
-            search_targets = [t for t in [c_homepass, c_cluster, c_contract, c_package, c_street] if t is not None]
+            search_targets = [t for t in [c_homepass, c_cluster, c_contract, c_package, c_street, c_block, c_house] if t is not None]
             for target in search_targets:
                 search_conditions.append(f"[{target}] LIKE '%{keyword_search}%'")
             if search_conditions:
@@ -352,21 +382,13 @@ else:
         st.markdown("---")
 
         if not df_filtered.empty:
-            def format_full_address(row):
+            # --- PENGGABUNGAN ALAMAT TERPISAH: Jalan + RT + RW ---
+            def format_street_address(row):
                 parts = []
-                cluster_val = str(row[c_cluster]).strip() if c_cluster and pd.notna(row[c_cluster]) else ""
-                block_val = str(row[c_block]).strip() if c_block and pd.notna(row[c_block]) else ""
-                house_val = str(row[c_house]).strip() if c_house and pd.notna(row[c_house]) else ""
                 street_val = str(row[c_street]).strip() if c_street and pd.notna(row[c_street]) else ""
                 rt_val = str(row[c_rt]).strip() if c_rt and pd.notna(row[c_rt]) else ""
                 rw_val = str(row[c_rw]).strip() if c_rw and pd.notna(row[c_rw]) else ""
 
-                if cluster_val:
-                    parts.append(f"[{cluster_val}]")
-                if block_val:
-                    parts.append(f"Blok {block_val}")
-                if house_val:
-                    parts.append(f"No. {house_val}")
                 if street_val:
                     parts.append(f"Jl. {street_val}")
                 if rt_val or rw_val:
@@ -374,9 +396,16 @@ else:
 
                 return " ".join(parts) if parts else "-"
 
-            df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_full_address, axis=1)
+            df_filtered["Alamat / Lokasi Pelanggan"] = df_filtered.apply(format_street_address, axis=1)
 
+            # Re-format Kolom Blok & No. Rumah agar tampil rapi
+            df_filtered["Blok"] = df_filtered[c_block].astype(str).str.strip().fillna("-") if c_block in df_filtered.columns else "-"
+            df_filtered["No. Rumah"] = df_filtered[c_house].astype(str).str.strip().fillna("-") if c_house in df_filtered.columns else "-"
+
+            # Pemetaan Kolom Tampilan Sesuai Urutan Baru
             col_mapping_target = {
+                "Blok": "Blok",
+                "No. Rumah": "No. Rumah",
                 "Alamat / Lokasi Pelanggan": "Alamat / Lokasi Pelanggan",
                 "Homepass ID": c_homepass,
                 "Home Pass Status": c_status,
@@ -399,6 +428,7 @@ else:
 
             st.markdown(f"### 📋 Hasil Direktori Pelanggan — **{selected_region}**")
             
+            # Tampilkan Tabel
             event = st.dataframe(
                 display_df, 
                 use_container_width=True, 
@@ -407,6 +437,7 @@ else:
                 on_select="rerun"
             )
 
+            # Pop-up Detail Informasi
             selected_rows = event.selection.get("rows", [])
             if selected_rows:
                 row_idx = selected_rows[0]
@@ -415,7 +446,8 @@ else:
                 @st.dialog("💎 Detail Informasi Pelanggan")
                 def show_detail_dialog(data):
                     st.markdown("#### Informasi Alamat & Identitas")
-                    st.write(f"**Alamat Lengkap:** {data.get('Alamat / Lokasi Pelanggan', 'N/A')}")
+                    st.write(f"**Blok:** `{data.get('Blok', 'N/A')}` | **No. Rumah:** `{data.get('No. Rumah', 'N/A')}`")
+                    st.write(f"**Alamat Jalan:** {data.get('Alamat / Lokasi Pelanggan', 'N/A')}")
                     st.write(f"**Homepass ID:** `{data.get(c_homepass, 'N/A')}`")
                     st.markdown("---")
                     st.markdown("#### Informasi Layanan & Kontrak")
